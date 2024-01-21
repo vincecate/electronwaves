@@ -49,12 +49,13 @@ import dask
 import multiprocessing
 import os
 
-guion=True
+guion=False
+usedask=False
 
-grid_size = 30
+grid_size = 15   # 30 can be down to 2 mins for 10 dt if all goes well
 
 visualize_start= 2 # really the 3rd plane since starts at 0
-visualize_stop = 8 # really only goes up to one less than this but since starts at zero this many
+visualize_stop = 4 # really only goes up to one less than this but since starts at zero this many
 
 # Declare global variables
 global fig, ax
@@ -70,7 +71,7 @@ initial_radius = 5.29e-11 #  initial electron radius for hydrogen atom - got at 
 pulse_perc = 0.2 # really a ratio to initial radius but think like percent
 
 # Time stepping
-num_steps =  2000
+num_steps =  200
 DisplaySteps = 10     # every so many simulation steps we call the visualize code
 
 
@@ -180,16 +181,15 @@ def initialize_electron(x, y, z):
 
 def initialize_visualization():
     global fig, ax  # Declare as global
-    if guion:
-        fig = plt.figure(figsize=(12.8, 9.6))
-        #plt.ion()  # non-blocking
-        ax = fig.add_subplot(111, projection='3d')
-        ax.set_xlabel('X')
-        ax.set_ylabel('Y')
-        ax.set_zlabel('Z')
+    fig = plt.figure(figsize=(12.8, 9.6))
+    plt.ion()  # non-blocking
+    ax = fig.add_subplot(111, projection='3d')
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_zlabel('Z')
 
-        # Ensure the simulation directory exists
-        os.makedirs('simulation', exist_ok=True)
+    # Ensure the simulation directory exists
+    os.makedirs('simulation', exist_ok=True)
 
 
 
@@ -205,6 +205,10 @@ def visualize_atoms(step, t):
     maxd = 0   # find electron with maximum distance from local nucleus
     mins = 10*electron_speed  # find minimum speed of an electron
     maxs = 0   # find maximum speed of an electron
+
+
+    # Clear the previous plot
+    ax.clear()  
 
     for x in range(visualize_start, visualize_stop):  # pulse at x=0 so 0 and 1 are first intersting things 
         for y in range(grid_size):
@@ -223,9 +227,8 @@ def visualize_atoms(step, t):
                 # Normalize the distance and map to color - trying to get normalized to be between 0 and 1
                 # adding 1.5x should get us to 0.5 to 2.5 when still circular and 0 to 3 if bit wild
                 normalized_distance =  (distance+(1.5*initial_radius))/(3*initial_radius) 
-                if (guion):
-                    color = plt.cm.viridis(normalized_distance)
-                    ax.scatter(*electron_pos, color=color,  s=10)
+                color = plt.cm.viridis(normalized_distance)
+                ax.scatter(*electron_pos, color=color,  s=10)
                 if(normalized_distance<mind):
                     mind=normalized_distance
                 if(normalized_distance>maxd):
@@ -235,17 +238,17 @@ def visualize_atoms(step, t):
                     mins=speed
                 if(speed>maxs):
                     maxs=speed
+
+    # Set title with the current time in the simulation
+    ax.set_title(f"Step {step}  Simulation Time: {t} seconds")
+
+    # Use os.path.join to create the file path
+    filename = os.path.join('simulation', f'step_{step}.png')
+    plt.savefig(filename)
     if (guion):
-
-        # Set title with the current time in the simulation
-        ax.set_title(f"Step {step}  Simulation Time: {t} seconds")
-
-        # Use os.path.join to create the file path
-        filename = os.path.join('simulation', f'step_{step}.png')
-        plt.savefig(filename)
-        # plt.show()
-        # Process GUI events and wait briefly to keep the GUI responsive
-        # plt.pause(0.001)
+         plt.show()
+    # Process GUI events and wait briefly to keep the GUI responsive
+    plt.pause(0.001)
 
     print("mind  =",mind)
     print("maxd  =",maxd)
@@ -348,20 +351,30 @@ def main():
         #plt.pause(0.01)
 
         print("Updating force", step)
-        # Create delayed tasks for each iteration of the loop to compute force
-        tasks = []
-        for x in range(grid_size):
-            for y in range(grid_size):
-                    task = delayed(compute_onepart)(x,y)
-                    tasks.append(task)
-        results = dask.compute(*tasks, scheduler='processes') # Use Dask to compute the tasks in parallel
+        if usedask:
+            # Create delayed tasks for each iteration of the loop to compute force
+            tasks = []
+            for x in range(grid_size):
+                for y in range(grid_size):
+                        task = delayed(compute_onepart)(x,y)
+                        tasks.append(task)
+            results = dask.compute(*tasks, scheduler='processes') # Use Dask to compute the tasks in parallel
+        else:
+            for x in range(grid_size):
+                for y in range(grid_size):
+                    compute_onepart(x,y)
 
         print("Updating position and velocity", t)
-        tasks = []
-        for x in range(grid_size):
-            task = delayed(update_onepart)(x, dt)
-            tasks.append(task)
-        results = dask.compute(*tasks, scheduler='processes') # Use Dask to compute the tasks in parallel
+        if usedask:
+            tasks = []
+            for x in range(grid_size):
+                task = delayed(update_onepart)(x, dt)
+                tasks.append(task)
+            results = dask.compute(*tasks, scheduler='processes') # Use Dask to compute the tasks in parallel
+        else:
+            for x in range(grid_size):
+                update_onepart(x,dt)
+
     visualize_atoms(step, t)  # If we end at 200 we need last output
 
 
