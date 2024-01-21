@@ -50,7 +50,7 @@ import multiprocessing
 import os
 
 guion=False
-usedask=False
+usedask=True
 
 grid_size = 15   # 30 can be down to 2 mins for 10 dt if all goes well
 
@@ -313,14 +313,7 @@ def compute_force(x, y, z):
                         totalforce += calculate_coulomb_force(electron_position, nearby_nucleus_position, -e, e)
                         #   add force from nearby electron 
                         totalforce += calculate_coulomb_force(electron_position, nearby_electron_position, -e, -e)
-        forces[x, y, z]=totalforce
-
-# enough parallel work to pass off to a different core
-def compute_onepart(x,y):
-    global grid_size
-    for z in range(grid_size):
-           compute_force(x, y, z)
-    return(0)
+        return(totalforce)
 
 # enough parallel work to pass off to a different core
 def update_onepart(x, dt):
@@ -354,18 +347,30 @@ def main():
         if usedask:
             # Create delayed tasks for each iteration of the loop to compute force
             tasks = []
+            # Create tasks for each grid position
             for x in range(grid_size):
                 for y in range(grid_size):
-                        task = delayed(compute_onepart)(x,y)
+                    for z in range(grid_size):
+                        task = delayed(compute_force)(x, y, z)
                         tasks.append(task)
-            results = dask.compute(*tasks, scheduler='processes') # Use Dask to compute the tasks in parallel
+
+            # Compute the tasks in parallel
+            forces_results = dask.compute(*tasks, scheduler='processes')
+
+            # Update the global forces array directly
+            idx = 0
+            for x in range(grid_size):
+                for y in range(grid_size):
+                    for z in range(grid_size):
+                        forces[x, y, z] = forces_results[idx]
+                        idx += 1
         else:
             for x in range(grid_size):
                 for y in range(grid_size):
                     compute_onepart(x,y)
 
         print("Updating position and velocity", t)
-        if usedask:
+        if usedask and False:
             tasks = []
             for x in range(grid_size):
                 task = delayed(update_onepart)(x, dt)
