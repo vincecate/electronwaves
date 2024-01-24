@@ -17,8 +17,6 @@
 # * The distance between air molecules is around 3.34 nanometers
 # * So about 33.38 times larger distance 
 # *
-# * In the Bohr model of the hydrogen atom, the electron orbits the nucleus in a manner similar to planets orbiting the sun. While this model is a simplification and
-# doesn't fully represent the complexities of quantum mechanics, it provides a useful approximation for certain calculations.
 #
 #According to the Bohr model, the speed of an electron in a hydrogen atom can be calculated using the formula:
 #
@@ -37,6 +35,30 @@
 #
 #In the Bohr model of the hydrogen atom, the speed of an electron in its ground state (with the principal quantum number n=1n=1) 
 # is approximately 2,187,278 meters per second.   This is about 0.73% the speed of light.
+# The calculated radii of the orbits for the hydrogen atom in the Bohr model for principal quantum numbers
+# 
+# n=1,2,3 are as follows:
+# 
+# For n=1 (ground state): The radius is approximately  5.29×10 −11 meters (or 52.9 picometers).
+# For n=2: The radius is approximately 2.12×10 −10 meters (or 212 picometers).
+# For n=3: The radius is approximately 4.76×10 −10 meters (or 476 picometers).
+#
+# Visible light falls within a range of wavelengths from approximately 380 nanometers (nm) to about 750 nm. 
+#    About 100 times the distance between air molecules!
+#
+# In the case of a large plate (where 'large' means that the plate's dimensions are much larger than the distance from the plate), 
+# the electric field is approximately uniform close to the plate. This means that the field strength does not significantly decrease 
+# for short distances (like centimeters) from the plate's center or surface. The uniformity of the field holds true as 
+# long as the distance from the plate is small compared to the dimensions of the plate.
+# 
+# The diameter of a 22-gauge wire is approximately 2,510,234 copper atoms wide. 
+#   Electrons in a wire are propagating a plane wave!  The field is pushing on
+#   electrons thousands of atoms in front at the same time, so the wave can 
+#   move far faster than any electron moves!
+#
+# Updated plan Jan 24, 2024
+#    Simulate electron as cloud around nucleus with spring model - kind of like Maxwell model
+#    With a plane the net electric field does not really drop off.  This is why light is so fast!
 
 import numpy as cp    # cupy for GPU
 import numpy as np   # numpy as np for CPU and now just for visualization 
@@ -52,10 +74,13 @@ import os
 guion=False
 usedask=True
 
-grid_size = 15   # 30 can be down to 2 mins for 10 dt if all goes well
+#grid_size = 40   # 30 can be down to 2 mins for 10 dt if all goes well
+gridx = 10   # To start only simulating few layers 
+gridy = 40   # 30 can be down to 2 mins for 10 dt if all goes well
+gridz = 40   # 30 can be down to 2 mins for 10 dt if all goes well
 
 visualize_start= 2 # really the 3rd plane since starts at 0
-visualize_stop = 4 # really only goes up to one less than this but since starts at zero this many
+visualize_stop = 7 # really only goes up to one less than this but since starts at zero this many
 
 # Declare global variables
 global fig, ax
@@ -66,23 +91,23 @@ electron_speed= 2188058
 
 # Atom spacing in meters
 atom_spacing = 3.34e-9  # 3.34 nanometers between atoms
-nearby_grid = 3    # we are only calculating forces from atoms this grid distance in each direction 
+nearby_grid = 20    # we are only calculating forces from atoms this grid distance in each direction 
 initial_radius = 5.29e-11 #  initial electron radius for hydrogen atom - got at least two times
-pulse_perc = 0.2 # really a ratio to initial radius but think like percent
+pulse_perc = 0.1 # really a ratio to initial radius but think like percent
 
 # Time stepping
 num_steps =  200
-DisplaySteps = 10     # every so many simulation steps we call the visualize code
+DisplaySteps = 1     # every so many simulation steps we call the visualize code
 
 
 coulombs_constant = 1 / (4 * cp.pi * epsilon_0)  # Coulomb's constant 
 
 
 
-nucleus_positions = cp.zeros((grid_size, grid_size, grid_size, 3))
-electron_positions = cp.zeros((grid_size, grid_size, grid_size, 3))
-electron_velocities = cp.zeros((grid_size, grid_size, grid_size, 3))
-forces = cp.zeros((grid_size, grid_size, grid_size, 3))
+nucleus_positions = cp.zeros((gridx, gridy, gridz, 3))
+electron_positions = cp.zeros((gridx, gridy, gridz, 3))
+electron_velocities = cp.zeros((gridx, gridy, gridz, 3))
+forces = cp.zeros((gridx, gridy, gridz, 3))
 
 # Global 3D arrays with 3 unit arrays as data
 # nucleus_positions 
@@ -169,6 +194,7 @@ def initialize_electron(x, y, z):
 
 
 
+
 # Global 3D arrays with 3 unit arrays as data
 # nucleus_positions 
 # electron_positions 
@@ -184,35 +210,41 @@ def initialize_visualization():
     fig = plt.figure(figsize=(12.8, 9.6))
     plt.ion()  # non-blocking
     ax = fig.add_subplot(111, projection='3d')
-    ax.set_xlabel('X')
-    ax.set_ylabel('Y')
-    ax.set_zlabel('Z')
 
     # Ensure the simulation directory exists
     os.makedirs('simulation', exist_ok=True)
 
+def clear_visualization():
+    global ax
+    ax.clear()
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_zlabel('Z')
 
 
+# New idea is to show the average electron Y position relative to nucleus in each plane x=0, x=1, ...
+# If there is a wave where Y is changing this would show it
 # To break into parts for different cores we need to
 #    combine min/max results
 #    probably not add things to ax.scatter inside different cores
 # XXX this is slow and serial and would be good to make faster somehow
 def visualize_atoms(step, t):
-    global grid_size, electron_positions, nucleus_positions, electron_speed, electron_velocities
+    global gridx, gridy, gridz, electron_positions, nucleus_positions, electron_speed, electron_velocities
     global visualize_start, visualize_stop
 
-    mind = 10  # find electron with minimum distance from local nucleus
-    maxd = 0   # find electron with maximum distance from local nucleus
+    minxd = 10  # find electron with minimum Y distance from local nucleus
+    maxxd = 0   # find electron with maximum Y distance from local nucleus
     mins = 10*electron_speed  # find minimum speed of an electron
     maxs = 0   # find maximum speed of an electron
 
 
     # Clear the previous plot
-    ax.clear()  
+    clear_visualization()  
 
-    for x in range(visualize_start, visualize_stop):  # pulse at x=0 so 0 and 1 are first intersting things 
-        for y in range(grid_size):
-            for z in range(grid_size):
+    for x in range(visualize_start, visualize_stop):  # pulse at x=0,1,2  so first light will be 3
+        totalxdiff=0.0
+        for y in range(gridy):
+            for z in range(gridz):
                 # we sometimes test without cupy by doing "import numpy as cp" 
                 if 'cupy' in str(type(electron_positions[x,y,z])):
                     electron_pos = cp.asnumpy(electron_positions[x,y,z])
@@ -223,22 +255,24 @@ def visualize_atoms(step, t):
                 else:
                     nucleus_pos = nucleus_positions[x,y,z]
                 # wave is displacement in y plane so show that displacement with color
-                distance = np.linalg.norm(electron_pos[1] - nucleus_pos[1])
-                # Normalize the distance and map to color - trying to get normalized to be between 0 and 1
+                xdiff = electron_pos[0] - nucleus_pos[0]  # How far in X direction from nucleus 
+                totalxdiff += xdiff
+                distance = abs(xdiff)   # absolute value of distance
+                # Normalize the distance and map to color - 
                 # adding 1.5x should get us to 0.5 to 2.5 when still circular and 0 to 3 if bit wild
-                normalized_distance =  (distance+(1.5*initial_radius))/(3*initial_radius) 
+                normalized_distance =  abs((distance - 0.5*initial_radius)/initial_radius)
                 color = plt.cm.viridis(normalized_distance)
                 ax.scatter(*electron_pos, color=color,  s=10)
-                if(normalized_distance<mind):
-                    mind=normalized_distance
-                if(normalized_distance>maxd):
-                    maxd=normalized_distance
+                if(normalized_distance<minxd):
+                    minxd=normalized_distance
+                if(normalized_distance>maxxd):
+                    maxxd=normalized_distance
                 speed = cp.linalg.norm(electron_velocities[x,y,z]);
                 if(speed<mins):
                     mins=speed
                 if(speed>maxs):
                     maxs=speed
-
+        print(" ", totalxdiff / (gridy * gridz), ",", end='')
     # Set title with the current time in the simulation
     ax.set_title(f"Step {step}  Simulation Time: {t} seconds")
 
@@ -250,8 +284,8 @@ def visualize_atoms(step, t):
     # Process GUI events and wait briefly to keep the GUI responsive
     plt.pause(0.001)
 
-    print("mind  =",mind)
-    print("maxd  =",maxd)
+    print("minxd  =",minxd)
+    print("maxxd  =",maxxd)
     print("mins  =",mins)
     print("maxs  =",maxs)
 
@@ -265,22 +299,22 @@ def visualize_atoms(step, t):
 # forces
 # Initialize the 3 of the main arrays (forces ok at zeros)
 def initialize_atoms():
-    for x in range(grid_size):
-        for y in range(grid_size):
-            for z in range(grid_size):
+    for x in range(gridx):
+        for y in range(gridy):
+            for z in range(gridz):
                 nucleus_positions[x, y, z] = cp.array([x, y, z]) * atom_spacing
-                initialize_electron(x, y, z)   # both position and velocity of electron
+                initialize_electron(x, y, z)   # both position and velocity of electron XXX debug
 
 # Need to make Initial pulse by moving few rows of electrons XXX
 #
-# Displace electrons in the first 3 x layers
-# transverse wave so in x=0 plane we displace in the y direction
+# Displace electrons in half the first 3 x layers
+# transverse wave so in x=0 plane we displace in the x direction
 def pulse():
     displacement = pulse_perc * initial_radius
-    for y in range(grid_size):
-        for z in range(grid_size):
-            for x in range(0,3):
-                electron_positions[x,y,z][1] += displacement
+    for x in range(0,3):
+        for y in range(int(gridy/2)):
+            for z in range(gridz):
+                electron_positions[x,y,z][0] += displacement
 
 
 
@@ -306,7 +340,7 @@ def compute_force(x, y, z):
                         continue  # If on own then no nearby to do
 
                     # Check if the position is within the grid
-                    if 0 <= nx < grid_size and 0 <= ny < grid_size and 0 <= nz < grid_size:
+                    if 0 <= nx < gridx and 0 <= ny < gridy and 0 <= nz < gridz:
                         nearby_nucleus_position = nucleus_positions[nx, ny, nz]
                         nearby_electron_position = electron_positions[nx, ny, nz]
                         #   add force from nearby nucleus 
@@ -317,29 +351,30 @@ def compute_force(x, y, z):
 
 # enough parallel work to pass off to a different core
 def update_onepart(x, dt):
-    global grid_size
-    for y in range(grid_size):
-        for z in range(grid_size):
+    global gridy, gridz
+    for y in range(gridy):
+        for z in range(gridz):
             acceleration = forces[x, y, z] / m_e
             electron_velocities[x, y, z] += acceleration * dt
             electron_positions[x, y, z] += electron_velocities[x, y, z] * dt
 
 def main():
-    global grid_size, atom_spacing, num_steps, plt
+    global gridx, gridy, gridz, atom_spacing, num_steps, plt
 
     checkgpu()
-    initialize_visualization()
     initialize_atoms()
+    initialize_visualization()
+    visualize_atoms(-1, 0)       # want one visualize right before pulse and one right after - mod 0 is 0 after ok
     pulse()
 
     client = Client(n_workers=24)  # You can adjust the number of workers
     # main simulation loop
-    dt = grid_size*atom_spacing/c/num_steps  # would like total simulation time to be long enough for light wave to just cross grid 
+    dt = gridx*atom_spacing/c/num_steps  # would like total simulation time to be long enough for light wave to just cross grid 
     for step in range(num_steps):
         t = step * dt
 
         if step % DisplaySteps == 0:
-            print("Display")
+            print("Display", step)
             visualize_atoms(step, t)
         #plt.pause(0.01)
 
@@ -348,36 +383,37 @@ def main():
             # Create delayed tasks for each iteration of the loop to compute force
             tasks = []
             # Create tasks for each grid position
-            for x in range(grid_size):
-                for y in range(grid_size):
-                    for z in range(grid_size):
+            for x in range(gridx):
+                for y in range(gridy):
+                    for z in range(gridz):
                         task = delayed(compute_force)(x, y, z)
                         tasks.append(task)
 
             # Compute the tasks in parallel
-            forces_results = dask.compute(*tasks, scheduler='processes')
+            forces_results = dask.compute(*tasks, scheduler='processes')  # can be processes or syncronous for debug
+            #forces_results = dask.compute(*tasks, scheduler='threads')  # can be processes or syncronous for debug
 
             # Update the global forces array directly
             idx = 0
-            for x in range(grid_size):
-                for y in range(grid_size):
-                    for z in range(grid_size):
+            for x in range(gridx):
+                for y in range(gridy):
+                    for z in range(gridz):
                         forces[x, y, z] = forces_results[idx]
                         idx += 1
         else:
-            for x in range(grid_size):
-                for y in range(grid_size):
+            for x in range(gridx):
+                for y in range(gridy):
                     compute_onepart(x,y)
 
         print("Updating position and velocity", t)
         if usedask and False:
             tasks = []
-            for x in range(grid_size):
+            for x in range(gridx):
                 task = delayed(update_onepart)(x, dt)
                 tasks.append(task)
             results = dask.compute(*tasks, scheduler='processes') # Use Dask to compute the tasks in parallel
         else:
-            for x in range(grid_size):
+            for x in range(gridx):
                 update_onepart(x,dt)
 
     visualize_atoms(step, t)  # If we end at 200 we need last output
