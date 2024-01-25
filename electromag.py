@@ -56,9 +56,30 @@
 #   electrons thousands of atoms in front at the same time, so the wave can 
 #   move far faster than any electron moves!
 #
+# Where the Voyager probes are there is about 1 atom per cubic cm.
+# If a plane wave is miles wide, that could be enough to propagate.
+#
+# https://en.wikipedia.org/wiki/Hydraulic_analogy  - water and electricity similarity - but speed of light is plane wave!
+#
+# https://www.youtube.com/watch?v=sDlZ-aY9GN4   - a magnetic field in one frame can be an electric field in another -relativity
+# https://www.youtube.com/watch?v=1TKSfAkWWN0   - veritasium on relativity and electric vs magnetic
+# https://www.youtube.com/watch?v=Ii7rgIQawko   - The Science Asylum on relativity and manetic vs electric
+#     There are so many positive and negative charges that a slight length change in one can make significant net charge
+#
 # Updated plan Jan 24, 2024
 #    Simulate electron as cloud around nucleus with spring model - kind of like Maxwell model
 #    With a plane the net electric field does not really drop off.  This is why light is so fast!
+#
+# Would be amazing result of this theory if it could correctly show:
+#  1- speed of light comes out right from plane wave and electrons charge and mass
+#  2- light of certain frequencies can drive electrons off as in experiments
+#  3- magnetic field from moving charges - if we can simulate moving charges curving in mag field using instant force beteen electrons
+#  4 - ampiers law that two wires next to each othe with current going the same way attract and opposite then repel
+#
+# Updated plan Jan 25, 2024
+#     Ignor nucleus and think of electrons in a wire.
+#         If get to edge of wire need to reflect back - have square wire :-)
+#         For first simulation can start all with zero velocity
 
 import numpy as cp    # cupy for GPU
 import numpy as np   # numpy as np for CPU and now just for visualization 
@@ -79,8 +100,6 @@ gridx = 10   # To start only simulating few layers
 gridy = 40   # 30 can be down to 2 mins for 10 dt if all goes well
 gridz = 40   # 30 can be down to 2 mins for 10 dt if all goes well
 
-visualize_start= 2 # really the 3rd plane since starts at 0
-visualize_stop = 7 # really only goes up to one less than this but since starts at zero this many
 
 # Declare global variables
 global fig, ax
@@ -91,14 +110,20 @@ electron_speed= 2188058
 
 # Atom spacing in meters
 atom_spacing = 3.34e-9  # 3.34 nanometers between atoms
-nearby_grid = 20    # we are only calculating forces from atoms this grid distance in each direction 
+nearby_grid = 40    # we are only calculating forces from atoms this grid distance in each direction 
 initial_radius = 5.29e-11 #  initial electron radius for hydrogen atom - got at least two times
-pulse_perc = 0.1 # really a ratio to initial radius but think like percent
+pulse_perc = 0.5 # really a ratio to initial radius but think like percent
+maxy=(gridy+1)*atom_spacing  #  in wire can't go outside wire
+maxz=(gridz+1)*atom_spacing  #  in wire can't go outside wire
+miny=-1                      # edge of wire
+minz=-1                      # edge of wire
 
 # Time stepping
 num_steps =  200
 DisplaySteps = 1     # every so many simulation steps we call the visualize code
-
+visualize_start= 2 # really the 3rd plane since starts at 0
+visualize_stop = 9 # really only goes up to one less than this but since starts at zero this many
+speedup = 20       # sort of rushing the simulation time
 
 coulombs_constant = 1 / (4 * cp.pi * epsilon_0)  # Coulomb's constant 
 
@@ -282,7 +307,7 @@ def visualize_atoms(step, t):
     if (guion):
          plt.show()
     # Process GUI events and wait briefly to keep the GUI responsive
-    plt.pause(0.001)
+    #plt.pause(0.001)
 
     print("minxd  =",minxd)
     print("maxxd  =",maxxd)
@@ -344,7 +369,7 @@ def compute_force(x, y, z):
                         nearby_nucleus_position = nucleus_positions[nx, ny, nz]
                         nearby_electron_position = electron_positions[nx, ny, nz]
                         #   add force from nearby nucleus 
-                        totalforce += calculate_coulomb_force(electron_position, nearby_nucleus_position, -e, e)
+                        # totalforce += calculate_coulomb_force(electron_position, nearby_nucleus_position, -e, e)
                         #   add force from nearby electron 
                         totalforce += calculate_coulomb_force(electron_position, nearby_electron_position, -e, -e)
         return(totalforce)
@@ -357,9 +382,19 @@ def update_onepart(x, dt):
             acceleration = forces[x, y, z] / m_e
             electron_velocities[x, y, z] += acceleration * dt
             electron_positions[x, y, z] += electron_velocities[x, y, z] * dt
+            #  These 4 ifs are to bounce electron off 4 sides of our square wire
+            # If out of bounds and headed away reverse that part of velocity vector
+            if electron_positions[x, y, z][1] > maxy and electron_velocities[x, y, z][1] > 0:
+                electron_velocities[x, y, z][1] = -electron_velocities[x, y, z][1]              # bounce off maxy
+            if electron_positions[x, y, z][2] > maxz and electron_velocities[x, y, z][2] > 0:
+                electron_velocities[x, y, z][2] = -electron_velocities[x, y, z][2]              # bounce off maxz
+            if electron_positions[x, y, z][1] < miny and electron_velocities[x, y, z][1] < 0:
+                electron_velocities[x, y, z][1] = -electron_velocities[x, y, z][1]              # bounce off miny
+            if electron_positions[x, y, z][2] < minz and electron_velocities[x, y, z][2] < 0:
+                electron_velocities[x, y, z][2] = -electron_velocities[x, y, z][2]              # bounce off minz
 
 def main():
-    global gridx, gridy, gridz, atom_spacing, num_steps, plt
+    global gridx, gridy, gridz, atom_spacing, num_steps, plt, speedup
 
     checkgpu()
     initialize_atoms()
@@ -369,7 +404,7 @@ def main():
 
     client = Client(n_workers=24)  # You can adjust the number of workers
     # main simulation loop
-    dt = gridx*atom_spacing/c/num_steps  # would like total simulation time to be long enough for light wave to just cross grid 
+    dt = speedup*gridx*atom_spacing/c/num_steps  # would like total simulation time to be long enough for light wave to just cross grid 
     for step in range(num_steps):
         t = step * dt
 
