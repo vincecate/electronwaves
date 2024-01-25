@@ -96,7 +96,7 @@ guion=False
 usedask=True
 
 #grid_size = 40   # 30 can be down to 2 mins for 10 dt if all goes well
-gridx = 10   # To start only simulating few layers 
+gridx = 20   # To start only simulating few layers 
 gridy = 40   # 30 can be down to 2 mins for 10 dt if all goes well
 gridz = 40   # 30 can be down to 2 mins for 10 dt if all goes well
 
@@ -113,17 +113,21 @@ atom_spacing = 3.34e-9  # 3.34 nanometers between atoms
 nearby_grid = 40    # we are only calculating forces from atoms this grid distance in each direction 
 initial_radius = 5.29e-11 #  initial electron radius for hydrogen atom - got at least two times
 pulse_perc = 0.5 # really a ratio to initial radius but think like percent
+pulserange=5       # 0 to 4 will be given pulse
+simrange=pulserange-1   # we don't bother simulating the pulse electrons
+pulsehalf=False    # True to only pulse half the plane
 maxy=(gridy+1)*atom_spacing  #  in wire can't go outside wire
 maxz=(gridz+1)*atom_spacing  #  in wire can't go outside wire
 miny=-1                      # edge of wire
 minz=-1                      # edge of wire
+minx=-1                      # edge of wire
 
 # Time stepping
 num_steps =  200
 DisplaySteps = 1     # every so many simulation steps we call the visualize code
-visualize_start= 2 # really the 3rd plane since starts at 0
-visualize_stop = 9 # really only goes up to one less than this but since starts at zero this many
-speedup = 20       # sort of rushing the simulation time
+visualize_start= simrange # really the 3rd plane since starts at 0
+visualize_stop = gridx-3 # really only goes up to one less than this but since starts at zero this many
+speedup = 10       # sort of rushing the simulation time
 
 coulombs_constant = 1 / (4 * cp.pi * epsilon_0)  # Coulomb's constant 
 
@@ -335,9 +339,13 @@ def initialize_atoms():
 # Displace electrons in half the first 3 x layers
 # transverse wave so in x=0 plane we displace in the x direction
 def pulse():
+    global pulserange
     displacement = pulse_perc * initial_radius
-    for x in range(0,3):
-        for y in range(int(gridy/2)):
+    yrange=gridy
+    if pulsehalf:
+        yrange=int(gridy/2)
+    for x in range(0,pulserange):
+        for y in range(yrange):
             for z in range(gridz):
                 electron_positions[x,y,z][0] += displacement
 
@@ -392,6 +400,8 @@ def update_onepart(x, dt):
                 electron_velocities[x, y, z][1] = -electron_velocities[x, y, z][1]              # bounce off miny
             if electron_positions[x, y, z][2] < minz and electron_velocities[x, y, z][2] < 0:
                 electron_velocities[x, y, z][2] = -electron_velocities[x, y, z][2]              # bounce off minz
+            if electron_positions[x, y, z][0] < minx and electron_velocities[x, y, z][0] < 0:
+                electron_velocities[x, y, z][0] = -electron_velocities[x, y, z][0]              # bounce off minx
 
 def main():
     global gridx, gridy, gridz, atom_spacing, num_steps, plt, speedup
@@ -418,7 +428,7 @@ def main():
             # Create delayed tasks for each iteration of the loop to compute force
             tasks = []
             # Create tasks for each grid position
-            for x in range(gridx):
+            for x in range(simrange, gridx):      # not simulating pulse electrons - like held by battery
                 for y in range(gridy):
                     for z in range(gridz):
                         task = delayed(compute_force)(x, y, z)
@@ -430,20 +440,20 @@ def main():
 
             # Update the global forces array directly
             idx = 0
-            for x in range(gridx):
+            for x in range(simrange, gridx):
                 for y in range(gridy):
                     for z in range(gridz):
                         forces[x, y, z] = forces_results[idx]
                         idx += 1
         else:
-            for x in range(gridx):
+            for x in range(simrange, gridx):
                 for y in range(gridy):
                     compute_onepart(x,y)
 
         print("Updating position and velocity", t)
         if usedask and False:
             tasks = []
-            for x in range(gridx):
+            for x in range(simrange, gridx):
                 task = delayed(update_onepart)(x, dt)
                 tasks.append(task)
             results = dask.compute(*tasks, scheduler='processes') # Use Dask to compute the tasks in parallel
