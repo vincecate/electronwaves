@@ -118,9 +118,10 @@ simrange=pulserange-1   # we don't bother simulating the pulse electrons
 pulsehalf=False    # True to only pulse half the plane
 maxy=(gridy+1)*atom_spacing  #  in wire can't go outside wire
 maxz=(gridz+1)*atom_spacing  #  in wire can't go outside wire
-miny=-1                      # edge of wire
-minz=-1                      # edge of wire
-minx=-1                      # edge of wire
+miny=-1*atom_spacing         # edge of wire
+minz=-1*atom_spacing         # edge of wire
+minx=-1*atom_spacing         # edge of wire
+maxx=(gridx+1)*atom_spacing  # edge of wire
 einitialmoving=False          # can have electrons initialized to moving if True and not moving if False
 
 # Time stepping
@@ -393,18 +394,27 @@ def update_onepart(x, dt):
             acceleration = forces[x, y, z] / m_e
             electron_velocities[x, y, z] += acceleration * dt
             electron_positions[x, y, z] += electron_velocities[x, y, z] * dt
-            #  These 4 ifs are to bounce electron off 4 sides of our square wire
+            #  These ifs are to keep electrons in our square wire
             # If out of bounds and headed away reverse that part of velocity vector
+            #   and set position at the edge
+            if electron_positions[x, y, z][0] > maxx and electron_velocities[x, y, z][0] > 0:
+                electron_positions[x, y, z][0] = maxx 
+                electron_velocities[x, y, z][0] = -electron_velocities[x, y, z][0]              # bounce off minx
             if electron_positions[x, y, z][1] > maxy and electron_velocities[x, y, z][1] > 0:
+                electron_positions[x, y, z][1] = maxy 
                 electron_velocities[x, y, z][1] = -electron_velocities[x, y, z][1]              # bounce off maxy
             if electron_positions[x, y, z][2] > maxz and electron_velocities[x, y, z][2] > 0:
+                electron_positions[x, y, z][2] = maxz 
                 electron_velocities[x, y, z][2] = -electron_velocities[x, y, z][2]              # bounce off maxz
+            if electron_positions[x, y, z][0] < minx and electron_velocities[x, y, z][0] < 0:
+                electron_positions[x, y, z][0] = minx 
+                electron_velocities[x, y, z][0] = -electron_velocities[x, y, z][0]              # bounce off minx
             if electron_positions[x, y, z][1] < miny and electron_velocities[x, y, z][1] < 0:
+                electron_positions[x, y, z][1] = miny
                 electron_velocities[x, y, z][1] = -electron_velocities[x, y, z][1]              # bounce off miny
             if electron_positions[x, y, z][2] < minz and electron_velocities[x, y, z][2] < 0:
+                electron_positions[x, y, z][2] = minz 
                 electron_velocities[x, y, z][2] = -electron_velocities[x, y, z][2]              # bounce off minz
-            if electron_positions[x, y, z][0] < minx and electron_velocities[x, y, z][0] < 0:
-                electron_velocities[x, y, z][0] = -electron_velocities[x, y, z][0]              # bounce off minx
 
 def main():
     global gridx, gridy, gridz, atom_spacing, num_steps, plt, speedup
