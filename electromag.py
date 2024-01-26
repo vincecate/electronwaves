@@ -96,7 +96,7 @@ guion=False
 usedask=True
 
 #grid_size = 40   # 30 can be down to 2 mins for 10 dt if all goes well
-gridx = 20   # To start only simulating few layers 
+gridx = 80   # To start only simulating few layers 
 gridy = 40   # 30 can be down to 2 mins for 10 dt if all goes well
 gridz = 40   # 30 can be down to 2 mins for 10 dt if all goes well
 
@@ -121,13 +121,15 @@ maxz=(gridz+1)*atom_spacing  #  in wire can't go outside wire
 miny=-1                      # edge of wire
 minz=-1                      # edge of wire
 minx=-1                      # edge of wire
+einitialmoving=False          # can have electrons initialized to moving if True and not moving if False
 
 # Time stepping
 num_steps =  200
 DisplaySteps = 1     # every so many simulation steps we call the visualize code
+visualize_plane_step = 8 # Only show every 3rd plane
 visualize_start= simrange # really the 3rd plane since starts at 0
 visualize_stop = gridx-3 # really only goes up to one less than this but since starts at zero this many
-speedup = 10       # sort of rushing the simulation time
+speedup = 2       # sort of rushing the simulation time
 
 coulombs_constant = 1 / (4 * cp.pi * epsilon_0)  # Coulomb's constant 
 
@@ -212,14 +214,15 @@ def initialize_electron(x, y, z):
 
     electron_positions[x, y, z] = cp.array([ex, ey, ez])
 
-    # position done now velcoity
-    # Random direction perpendicular to the vector from nucleus to electron
-    electron_vector = electron_positions[x, y, z] - nucleus_positions[x, y, z]
-    random_vector = cp.random.random(3)  # Random vector
-    perpendicular_vector = cp.cross(electron_vector, random_vector)  # Cross product to ensure perpendicularity
-    normalized_vector = perpendicular_vector / cp.linalg.norm(perpendicular_vector)
+    # position done now velocity if supposed to
+    if einitialmoving:
+        # Random direction perpendicular to the vector from nucleus to electron
+        electron_vector = electron_positions[x, y, z] - nucleus_positions[x, y, z]
+        random_vector = cp.random.random(3)  # Random vector
+        perpendicular_vector = cp.cross(electron_vector, random_vector)  # Cross product to ensure perpendicularity
+        normalized_vector = perpendicular_vector / cp.linalg.norm(perpendicular_vector)
 
-    electron_velocities[x, y, z] = normalized_vector * electron_speed
+        electron_velocities[x, y, z] = normalized_vector * electron_speed
 
 
 
@@ -259,7 +262,7 @@ def clear_visualization():
 # XXX this is slow and serial and would be good to make faster somehow
 def visualize_atoms(step, t):
     global gridx, gridy, gridz, electron_positions, nucleus_positions, electron_speed, electron_velocities
-    global visualize_start, visualize_stop
+    global visualize_start, visualize_stop, visualize_plane_step
 
     minxd = 10  # find electron with minimum Y distance from local nucleus
     maxxd = 0   # find electron with maximum Y distance from local nucleus
@@ -270,7 +273,7 @@ def visualize_atoms(step, t):
     # Clear the previous plot
     clear_visualization()  
 
-    for x in range(visualize_start, visualize_stop):  # pulse at x=0,1,2  so first light will be 3
+    for x in range(visualize_start, visualize_stop, visualize_plane_step):  # pulse at x=0,1,2  so first light will be 3
         totalxdiff=0.0
         for y in range(gridy):
             for z in range(gridz):
