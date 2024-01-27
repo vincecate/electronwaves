@@ -81,7 +81,7 @@
 #         If get to edge of wire need to reflect back - have square wire :-)
 #         For first simulation can start all with zero velocity
 
-use_gpu = False  # True means Cupy and GPY, False means NumPy and CPU
+use_gpu = True  # True means Cupy and GPY, False means NumPy and CPU
 
 if use_gpu:
     import cupy as cp
