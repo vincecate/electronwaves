@@ -81,7 +81,7 @@
 #         If get to edge of wire need to reflect back - have square wire :-)
 #         For first simulation can start all with zero velocity
 
-use_gpu = True  # True means Cupy and GPY, False means NumPy and CPU
+use_gpu = False  # True means Cupy and GPY, False means NumPy and CPU
 
 if use_gpu:
     import cupy as cp
@@ -120,12 +120,11 @@ electron_speed= 2188058
 
 # Atom spacing in meters
 atom_spacing = 3.34e-9  # 3.34 nanometers between atoms
-nearby_grid = 10    # we are only calculating forces from atoms this grid distance in each direction 
 initial_radius = 5.29e-11 #  initial electron radius for hydrogen atom - got at least two times
 pulse_perc = 0.5 # really a ratio to initial radius but think like percent
 pulserange=5       # 0 to 4 will be given pulse
 simxstart=pulserange-1   # we don't bother simulating the pulse electrons
-simxstop=40        # want wire in front not to move or suck electrons by not being there
+simxstop=int(gridx/2)        # want wire in front not to move or suck electrons by not being there
 pulsehalf=False    # True to only pulse half the plane
 einitialmoving=False          # can have electrons initialized to moving if True and not moving if False
 
@@ -135,10 +134,10 @@ bounds = ((-1.0*atom_spacing, (gridx+1)*atom_spacing), (-1.0*atom_spacing, (grid
 # Time stepping
 num_steps =  200
 DisplaySteps = 1     # every so many simulation steps we call the visualize code
-visualize_plane_step = 8 # Only show every 3rd plane
+visualize_plane_step = 5 # Only show every 3rd plane
 visualize_start= simxstart # really the 3rd plane since starts at 0
 visualize_stop = simxstop # really only goes up to one less than this but since starts at zero this many
-speedup = 1       # sort of rushing the simulation time
+speedup = 300       # sort of rushing the simulation time
 
 coulombs_constant = 1 / (4 * cp.pi * epsilon_0)  # Coulomb's constant 
 
@@ -315,6 +314,8 @@ def visualize_atoms(step, t):
 # forces
 # Initialize the 3 of the main arrays (forces ok at zeros)
 def initialize_atoms():
+    global nucleus_positions
+
     for x in range(gridx):
         for y in range(gridy):
             for z in range(gridz):
@@ -353,40 +354,43 @@ def calculate_forces():
     # Normalize force vectors and multiply by magnitude
     normforces = force_magnitude[..., cp.newaxis] * delta_r / distances[..., cp.newaxis]
 
+    print("Mean force magnitude:", cp.mean(cp.linalg.norm(normforces, axis=1)))
+    print("Max force magnitude:", cp.max(cp.linalg.norm(normforces, axis=1)))
+
     # Sum forces from all other electrons for each electron
     return(cp.sum(normforces, axis=1))
 
-    print("Max force magnitude:", cp.max(cp.linalg.norm(forces, axis=1)))
 
 
 
 def update_pv(dt):
-    global electron_velocities, electron_positions, bounds
+    global electron_velocities, electron_positions, bounds, forces, m_e
 
     # Update velocities based on acceleration (F = ma)
     acceleration = forces / m_e
-    electron_velocities += acceleration * dt
+    new_velocities = electron_velocities + acceleration * dt
 
     # Update positions using vectors
-    electron_positions += electron_velocities * dt
+    new_positions = electron_positions + electron_velocities * dt
 
     for i, (min_bound, max_bound) in enumerate(bounds):
         # Check for upper boundary
-        over_max = electron_positions[..., i] > max_bound
-        electron_positions[..., i][over_max] = max_bound
-        electron_velocities[..., i][over_max] *= -1
+        over_max = new_positions[..., i] > max_bound
+        new_positions[..., i][over_max] = max_bound
+        new_velocities[..., i][over_max] *= -1
 
         # Check for lower boundary
-        below_min = electron_positions[..., i] < min_bound
-        electron_positions[..., i][below_min] = min_bound
-        electron_velocities[..., i][below_min] *= -1
+        below_min = new_positions[..., i] < min_bound
+        new_positions[..., i][below_min] = min_bound
+        new_velocities[..., i][below_min] *= -1
 
-    print("Max position change:", cp.max(cp.abs(electron_positions)))
-    print("Max velocity:", cp.max(cp.linalg.norm(electron_velocities, axis=1)))
+    print("Max positions:", cp.max(cp.linalg.norm(new_positions, axis=1)))
+    print("Max velocity:", cp.max(cp.linalg.norm(new_velocities, axis=1)))
+    return(new_positions, new_velocities)
 
 
 def main():
-    global gridx, gridy, gridz, atom_spacing, num_steps, plt, speedup
+    global gridx, gridy, gridz, atom_spacing, num_steps, plt, speedup, forces, electron_positions, electron_velocities
 
     print("In main")
     checkgpu()
@@ -410,7 +414,7 @@ def main():
         forces=calculate_forces()
 
         print("Updating position and velocity", t)
-        update_pv(dt)
+        electron_positions,electron_velocities=update_pv(dt)
 
     visualize_atoms(step, t)  # If we end at 200 we need last output
 
