@@ -84,7 +84,7 @@
 import numpy as cp    # cupy for GPU
 import numpy as np   # numpy as np for CPU and now just for visualization 
 import matplotlib.pyplot as plt
-from scipy.constants import e, epsilon_0, m_e, c
+from scipy.constants import e, epsilon_0, electron_mass, m_e, c    # m_e is mass of electrong 
 import dask
 from dask import delayed
 from dask.distributed import Client
@@ -97,8 +97,8 @@ usedask=True
 
 #grid_size = 40   # 30 can be down to 2 mins for 10 dt if all goes well
 gridx = 80   # To start only simulating few layers 
-gridy = 40   # 30 can be down to 2 mins for 10 dt if all goes well
-gridz = 40   # 30 can be down to 2 mins for 10 dt if all goes well
+gridy = 10   # 30 can be down to 2 mins for 10 dt if all goes well
+gridz = 10   # 30 can be down to 2 mins for 10 dt if all goes well
 
 
 # Declare global variables
@@ -110,27 +110,28 @@ electron_speed= 2188058
 
 # Atom spacing in meters
 atom_spacing = 3.34e-9  # 3.34 nanometers between atoms
-nearby_grid = 40    # we are only calculating forces from atoms this grid distance in each direction 
+nearby_grid = 10    # we are only calculating forces from atoms this grid distance in each direction 
 initial_radius = 5.29e-11 #  initial electron radius for hydrogen atom - got at least two times
 pulse_perc = 0.5 # really a ratio to initial radius but think like percent
 pulserange=5       # 0 to 4 will be given pulse
-simrange=pulserange-1   # we don't bother simulating the pulse electrons
+simxstart=pulserange-1   # we don't bother simulating the pulse electrons
+simxstop=40        # want wire in front not to move or suck electrons by not being there
 pulsehalf=False    # True to only pulse half the plane
+maxx=(gridx+1)*atom_spacing  # edge of wire
 maxy=(gridy+1)*atom_spacing  #  in wire can't go outside wire
 maxz=(gridz+1)*atom_spacing  #  in wire can't go outside wire
-miny=-1*atom_spacing         # edge of wire
-minz=-1*atom_spacing         # edge of wire
-minx=-1*atom_spacing         # edge of wire
-maxx=(gridx+1)*atom_spacing  # edge of wire
+minx=-1.0*atom_spacing         # edge of wire
+miny=-1.0*atom_spacing         # edge of wire
+minz=-1.0*atom_spacing         # edge of wire
 einitialmoving=False          # can have electrons initialized to moving if True and not moving if False
 
 # Time stepping
 num_steps =  200
 DisplaySteps = 1     # every so many simulation steps we call the visualize code
 visualize_plane_step = 8 # Only show every 3rd plane
-visualize_start= simrange # really the 3rd plane since starts at 0
-visualize_stop = gridx-3 # really only goes up to one less than this but since starts at zero this many
-speedup = 2       # sort of rushing the simulation time
+visualize_start= simxstart # really the 3rd plane since starts at 0
+visualize_stop = simxstop # really only goes up to one less than this but since starts at zero this many
+speedup = 1       # sort of rushing the simulation time
 
 coulombs_constant = 1 / (4 * cp.pi * epsilon_0)  # Coulomb's constant 
 
@@ -260,7 +261,6 @@ def clear_visualization():
 # To break into parts for different cores we need to
 #    combine min/max results
 #    probably not add things to ax.scatter inside different cores
-# XXX this is slow and serial and would be good to make faster somehow
 def visualize_atoms(step, t):
     global gridx, gridy, gridz, electron_positions, nucleus_positions, electron_speed, electron_velocities
     global visualize_start, visualize_stop, visualize_plane_step
@@ -315,7 +315,7 @@ def visualize_atoms(step, t):
     if (guion):
          plt.show()
     # Process GUI events and wait briefly to keep the GUI responsive
-    #plt.pause(0.001)
+    plt.pause(0.001)
 
     print("minxd  =",minxd)
     print("maxxd  =",maxxd)
@@ -336,9 +336,9 @@ def initialize_atoms():
         for y in range(gridy):
             for z in range(gridz):
                 nucleus_positions[x, y, z] = cp.array([x, y, z]) * atom_spacing
-                initialize_electron(x, y, z)   # both position and velocity of electron XXX debug
+                initialize_electron(x, y, z)   # both position and velocity of electron 
 
-# Need to make Initial pulse by moving few rows of electrons XXX
+# Need to make Initial pulse by moving few rows of electrons 
 #
 # Displace electrons in half the first 3 x layers
 # transverse wave so in x=0 plane we displace in the x direction
@@ -388,7 +388,7 @@ def compute_force(x, y, z):
 
 # enough parallel work to pass off to a different core
 def update_onepart(x, dt):
-    global gridy, gridz
+    global gridy, gridz, maxx, maxy, maxz, minx, miny, minz
     for y in range(gridy):
         for z in range(gridz):
             acceleration = forces[x, y, z] / m_e
@@ -397,24 +397,30 @@ def update_onepart(x, dt):
             #  These ifs are to keep electrons in our square wire
             # If out of bounds and headed away reverse that part of velocity vector
             #   and set position at the edge
-            if electron_positions[x, y, z][0] > maxx and electron_velocities[x, y, z][0] > 0:
+            if electron_positions[x, y, z][0] > maxx: 
                 electron_positions[x, y, z][0] = maxx 
-                electron_velocities[x, y, z][0] = -electron_velocities[x, y, z][0]              # bounce off minx
-            if electron_positions[x, y, z][1] > maxy and electron_velocities[x, y, z][1] > 0:
+                if electron_velocities[x, y, z][0] > 0:
+                    electron_velocities[x, y, z][0] = -electron_velocities[x, y, z][0]              # bounce off minx
+            if electron_positions[x, y, z][1] > maxy:
                 electron_positions[x, y, z][1] = maxy 
-                electron_velocities[x, y, z][1] = -electron_velocities[x, y, z][1]              # bounce off maxy
-            if electron_positions[x, y, z][2] > maxz and electron_velocities[x, y, z][2] > 0:
+                if electron_velocities[x, y, z][1] > 0:
+                    electron_velocities[x, y, z][1] = -electron_velocities[x, y, z][1]              # bounce off maxy
+            if electron_positions[x, y, z][2] > maxz: 
                 electron_positions[x, y, z][2] = maxz 
-                electron_velocities[x, y, z][2] = -electron_velocities[x, y, z][2]              # bounce off maxz
-            if electron_positions[x, y, z][0] < minx and electron_velocities[x, y, z][0] < 0:
+                if electron_velocities[x, y, z][2] > 0:
+                    electron_velocities[x, y, z][2] = -electron_velocities[x, y, z][2]              # bounce off maxz
+            if electron_positions[x, y, z][0] < minx:
                 electron_positions[x, y, z][0] = minx 
-                electron_velocities[x, y, z][0] = -electron_velocities[x, y, z][0]              # bounce off minx
-            if electron_positions[x, y, z][1] < miny and electron_velocities[x, y, z][1] < 0:
+                if electron_velocities[x, y, z][0] < 0:
+                    electron_velocities[x, y, z][0] = -electron_velocities[x, y, z][0]              # bounce off minx
+            if electron_positions[x, y, z][1] < miny:
                 electron_positions[x, y, z][1] = miny
-                electron_velocities[x, y, z][1] = -electron_velocities[x, y, z][1]              # bounce off miny
-            if electron_positions[x, y, z][2] < minz and electron_velocities[x, y, z][2] < 0:
+                if electron_velocities[x, y, z][1] < 0:
+                    electron_velocities[x, y, z][1] = -electron_velocities[x, y, z][1]              # bounce off miny
+            if electron_positions[x, y, z][2] < minz:
                 electron_positions[x, y, z][2] = minz 
-                electron_velocities[x, y, z][2] = -electron_velocities[x, y, z][2]              # bounce off minz
+                if electron_velocities[x, y, z][2] < 0:
+                    electron_velocities[x, y, z][2] = -electron_velocities[x, y, z][2]                  # bounce off minz
 
 def main():
     global gridx, gridy, gridz, atom_spacing, num_steps, plt, speedup
@@ -427,7 +433,7 @@ def main():
 
     client = Client(n_workers=24)  # You can adjust the number of workers
     # main simulation loop
-    dt = speedup*gridx*atom_spacing/c/num_steps  # would like total simulation time to be long enough for light wave to just cross grid 
+    dt = speedup*simxstop*atom_spacing/c/num_steps  # would like total simulation time to be long enough for light wave to just cross grid 
     for step in range(num_steps):
         t = step * dt
 
@@ -441,7 +447,7 @@ def main():
             # Create delayed tasks for each iteration of the loop to compute force
             tasks = []
             # Create tasks for each grid position
-            for x in range(simrange, gridx):      # not simulating pulse electrons - like held by battery
+            for x in range(simxstart, simxstop):      # not simulating pulse electrons - like held by battery
                 for y in range(gridy):
                     for z in range(gridz):
                         task = delayed(compute_force)(x, y, z)
@@ -453,25 +459,25 @@ def main():
 
             # Update the global forces array directly
             idx = 0
-            for x in range(simrange, gridx):
+            for x in range(simxstart, simxstop):
                 for y in range(gridy):
                     for z in range(gridz):
                         forces[x, y, z] = forces_results[idx]
                         idx += 1
         else:
-            for x in range(simrange, gridx):
+            for x in range(simexstart, simxstop):
                 for y in range(gridy):
                     compute_onepart(x,y)
 
         print("Updating position and velocity", t)
         if usedask and False:
             tasks = []
-            for x in range(simrange, gridx):
+            for x in range(simxstart, simxstop):
                 task = delayed(update_onepart)(x, dt)
                 tasks.append(task)
             results = dask.compute(*tasks, scheduler='processes') # Use Dask to compute the tasks in parallel
         else:
-            for x in range(gridx):
+            for x in range(simxstart, simxstop):
                 update_onepart(x,dt)
 
     visualize_atoms(step, t)  # If we end at 200 we need last output
