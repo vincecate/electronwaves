@@ -81,7 +81,7 @@
 #         If get to edge of wire need to reflect back - have square wire :-)
 #         For first simulation can start all with zero velocity
 
-use_gpu = True  # True means Cupy and GPY, False means NumPy and CPU
+use_gpu = False  # True means Cupy and GPY, False means NumPy and CPU
 
 if use_gpu:
     import cupy as cp
@@ -107,8 +107,8 @@ guion=False
 
 #grid_size = 40   # 30 can be down to 2 mins for 10 dt if all goes well
 gridx = 80   # To start only simulating few layers 
-gridy = 10   # 30 can be down to 2 mins for 10 dt if all goes well
-gridz = 10   # 30 can be down to 2 mins for 10 dt if all goes well
+gridy = 40   # 30 can be down to 2 mins for 10 dt if all goes well
+gridz = 40   # 30 can be down to 2 mins for 10 dt if all goes well
 
 
 # Declare global variables
@@ -354,15 +354,14 @@ def calculate_forces():
     normforces = force_magnitude[..., cp.newaxis] * delta_r / distances[..., cp.newaxis]
 
     # Sum forces from all other electrons for each electron
-    forces = cp.sum(normforces, axis=1)
+    return(cp.sum(normforces, axis=1))
 
-
-
+    print("Max force magnitude:", cp.max(cp.linalg.norm(forces, axis=1)))
 
 
 
 def update_pv(dt):
-    global electron_velocities, electron_positions
+    global electron_velocities, electron_positions, bounds
 
     # Update velocities based on acceleration (F = ma)
     acceleration = forces / m_e
@@ -382,11 +381,14 @@ def update_pv(dt):
         electron_positions[..., i][below_min] = min_bound
         electron_velocities[..., i][below_min] *= -1
 
+    print("Max position change:", cp.max(cp.abs(electron_positions)))
+    print("Max velocity:", cp.max(cp.linalg.norm(electron_velocities, axis=1)))
 
 
 def main():
     global gridx, gridy, gridz, atom_spacing, num_steps, plt, speedup
 
+    print("In main")
     checkgpu()
     initialize_atoms()
     initialize_visualization()
@@ -397,6 +399,7 @@ def main():
     dt = speedup*simxstop*atom_spacing/c/num_steps  # would like total simulation time to be long enough for light wave to just cross grid 
     for step in range(num_steps):
         t = step * dt
+        print("In main", step)
 
         if step % DisplaySteps == 0:
             print("Display", step)
@@ -404,7 +407,7 @@ def main():
         #plt.pause(0.01)
 
         print("Updating force", step)
-        calculate_forces()
+        forces=calculate_forces()
 
         print("Updating position and velocity", t)
         update_pv(dt)
