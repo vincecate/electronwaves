@@ -81,19 +81,29 @@
 #         If get to edge of wire need to reflect back - have square wire :-)
 #         For first simulation can start all with zero velocity
 
-import numpy as cp    # cupy for GPU
+use_gpu = True  # True means Cupy and GPY, False means NumPy and CPU
+
+if use_gpu:
+    import cupy as cp
+else:
+    import numpy as cp
+
 import numpy as np   # numpy as np for CPU and now just for visualization 
 import matplotlib.pyplot as plt
-from scipy.constants import e, epsilon_0, electron_mass, m_e, c    # m_e is mass of electrong 
-import dask
-from dask import delayed
-from dask.distributed import Client
-import dask
-import multiprocessing
+from scipy.constants import e, epsilon_0, electron_mass, elementary_charge, m_e, c    # m_e is mass of electrong 
+electron_charge=elementary_charge
+coulombs_constant = 8.9875517873681764e9  # Coulomb's constant
+
+#import dask
+#from dask import delayed
+#from dask.distributed import Client
+#import dask
+#import multiprocessing
+#usedask=True
+
 import os
 
 guion=False
-usedask=True
 
 #grid_size = 40   # 30 can be down to 2 mins for 10 dt if all goes well
 gridx = 80   # To start only simulating few layers 
@@ -117,13 +127,10 @@ pulserange=5       # 0 to 4 will be given pulse
 simxstart=pulserange-1   # we don't bother simulating the pulse electrons
 simxstop=40        # want wire in front not to move or suck electrons by not being there
 pulsehalf=False    # True to only pulse half the plane
-maxx=(gridx+1)*atom_spacing  # edge of wire
-maxy=(gridy+1)*atom_spacing  #  in wire can't go outside wire
-maxz=(gridz+1)*atom_spacing  #  in wire can't go outside wire
-minx=-1.0*atom_spacing         # edge of wire
-miny=-1.0*atom_spacing         # edge of wire
-minz=-1.0*atom_spacing         # edge of wire
 einitialmoving=False          # can have electrons initialized to moving if True and not moving if False
+
+# bounds format is  ((minx,  maxx) , (miny, maxy), (minz, maxz))
+bounds = ((-1.0*atom_spacing, (gridx+1)*atom_spacing), (-1.0*atom_spacing, (gridy+1)*atom_spacing), (-1.0*atom_spacing, (gridz+1)*atom_spacing))
 
 # Time stepping
 num_steps =  200
@@ -162,31 +169,6 @@ def checkgpu():
         print(f"Current GPU ID: {current_gpu_id}")
     else:
         print("CUDA is not available or cp is NumPy")
-
-
-
-def calculate_coulomb_force(charge1_position, charge2_position, charge1, charge2):
-    global coulombs_constant
-    """
-    Calculates the Coulomb force vector exerted on charge1 by charge2.
-
-    Args:
-    - charge1_position (cp.array): The position vector of the first charge.
-    - charge2_position (cp.array): The position vector of the second charge.
-    - charge1 (float): The magnitude of the first charge.
-    - charge2 (float): The magnitude of the second charge.
-
-    Returns:
-    - cp.array: The force vector exerted on charge1 by charge2.
-    """
-    r_vector = charge1_position - charge2_position
-    r = cp.linalg.norm(r_vector)
-    if r != 0:
-        f_magnitude = coulombs_constant * (charge1 * charge2) / (r ** 2)
-        force_vector = f_magnitude * (r_vector / r)
-        return force_vector
-    else:
-        return cp.array([0.0, 0.0, 0.0])
 
 
 
@@ -274,6 +256,7 @@ def visualize_atoms(step, t):
     # Clear the previous plot
     clear_visualization()  
 
+    #  Could do safety check here and not include exlectrons out of bounds in visualization XXX
     for x in range(visualize_start, visualize_stop, visualize_plane_step):  # pulse at x=0,1,2  so first light will be 3
         totalxdiff=0.0
         for y in range(gridy):
@@ -354,73 +337,52 @@ def pulse():
                 electron_positions[x,y,z][0] += displacement
 
 
+def calculate_forces():
+    global electron_positions, forces, coulombs_constant, electron_charge
+
+    # Calculate pairwise differences in position (broadcasting)
+    delta_r = electron_positions[:, cp.newaxis, :] - electron_positions[cp.newaxis, :, :]
+
+    # Calculate distances and handle division by zero
+    distances = cp.linalg.norm(delta_r, axis=-1)
+    distances[cp.eye(distances.shape[0], dtype=bool)] = cp.inf
+
+    # Calculate forces (Coulomb's Law)
+    force_magnitude = coulombs_constant * (electron_charge ** 2) / distances**2
+
+    # Normalize force vectors and multiply by magnitude
+    normforces = force_magnitude[..., cp.newaxis] * delta_r / distances[..., cp.newaxis]
+
+    # Sum forces from all other electrons for each electron
+    forces = cp.sum(normforces, axis=1)
 
 
-# Global 3D arrays with 3 unit arrays as data
-# nucleus_positions 
-# electron_positions 
-# electron_velocities 
-# forces
 
-# need to look at nearby atoms
-def compute_force(x, y, z):
-        electron_position=electron_positions[x, y, z]
-        nucleus_position=nucleus_positions[x, y, z]
-        totalforce = cp.array([0.0, 0.0, 0.0])
-        # Iterate over nearby atoms within  3 grid units
-        for nx in range(x-nearby_grid, x+nearby_grid):
-            for ny in range(y-nearby_grid, y+nearby_grid):
-                for nz in range(z-nearby_grid, z+nearby_grid):
-                    if nx == x and ny == y and nz == z:
-                        # add force for own nucleus
-                        totalforce += calculate_coulomb_force(electron_position, nucleus_position, -e, e)
-                        continue  # If on own then no nearby to do
 
-                    # Check if the position is within the grid
-                    if 0 <= nx < gridx and 0 <= ny < gridy and 0 <= nz < gridz:
-                        nearby_nucleus_position = nucleus_positions[nx, ny, nz]
-                        nearby_electron_position = electron_positions[nx, ny, nz]
-                        #   add force from nearby nucleus 
-                        # totalforce += calculate_coulomb_force(electron_position, nearby_nucleus_position, -e, e)
-                        #   add force from nearby electron 
-                        totalforce += calculate_coulomb_force(electron_position, nearby_electron_position, -e, -e)
-        return(totalforce)
 
-# enough parallel work to pass off to a different core
-def update_onepart(x, dt):
-    global gridy, gridz, maxx, maxy, maxz, minx, miny, minz
-    for y in range(gridy):
-        for z in range(gridz):
-            acceleration = forces[x, y, z] / m_e
-            electron_velocities[x, y, z] += acceleration * dt
-            electron_positions[x, y, z] += electron_velocities[x, y, z] * dt
-            #  These ifs are to keep electrons in our square wire
-            # If out of bounds and headed away reverse that part of velocity vector
-            #   and set position at the edge
-            if electron_positions[x, y, z][0] > maxx: 
-                electron_positions[x, y, z][0] = maxx 
-                if electron_velocities[x, y, z][0] > 0:
-                    electron_velocities[x, y, z][0] = -electron_velocities[x, y, z][0]              # bounce off minx
-            if electron_positions[x, y, z][1] > maxy:
-                electron_positions[x, y, z][1] = maxy 
-                if electron_velocities[x, y, z][1] > 0:
-                    electron_velocities[x, y, z][1] = -electron_velocities[x, y, z][1]              # bounce off maxy
-            if electron_positions[x, y, z][2] > maxz: 
-                electron_positions[x, y, z][2] = maxz 
-                if electron_velocities[x, y, z][2] > 0:
-                    electron_velocities[x, y, z][2] = -electron_velocities[x, y, z][2]              # bounce off maxz
-            if electron_positions[x, y, z][0] < minx:
-                electron_positions[x, y, z][0] = minx 
-                if electron_velocities[x, y, z][0] < 0:
-                    electron_velocities[x, y, z][0] = -electron_velocities[x, y, z][0]              # bounce off minx
-            if electron_positions[x, y, z][1] < miny:
-                electron_positions[x, y, z][1] = miny
-                if electron_velocities[x, y, z][1] < 0:
-                    electron_velocities[x, y, z][1] = -electron_velocities[x, y, z][1]              # bounce off miny
-            if electron_positions[x, y, z][2] < minz:
-                electron_positions[x, y, z][2] = minz 
-                if electron_velocities[x, y, z][2] < 0:
-                    electron_velocities[x, y, z][2] = -electron_velocities[x, y, z][2]                  # bounce off minz
+
+def update_pv(dt):
+    global electron_velocities, electron_positions
+
+    # Update velocities based on acceleration (F = ma)
+    acceleration = forces / m_e
+    electron_velocities += acceleration * dt
+
+    # Update positions using vectors
+    electron_positions += electron_velocities * dt
+
+    for i, (min_bound, max_bound) in enumerate(bounds):
+        # Check for upper boundary
+        over_max = electron_positions[..., i] > max_bound
+        electron_positions[..., i][over_max] = max_bound
+        electron_velocities[..., i][over_max] *= -1
+
+        # Check for lower boundary
+        below_min = electron_positions[..., i] < min_bound
+        electron_positions[..., i][below_min] = min_bound
+        electron_velocities[..., i][below_min] *= -1
+
+
 
 def main():
     global gridx, gridy, gridz, atom_spacing, num_steps, plt, speedup
@@ -431,7 +393,6 @@ def main():
     visualize_atoms(-1, 0)       # want one visualize right before pulse and one right after - mod 0 is 0 after ok
     pulse()
 
-    client = Client(n_workers=24)  # You can adjust the number of workers
     # main simulation loop
     dt = speedup*simxstop*atom_spacing/c/num_steps  # would like total simulation time to be long enough for light wave to just cross grid 
     for step in range(num_steps):
@@ -443,42 +404,10 @@ def main():
         #plt.pause(0.01)
 
         print("Updating force", step)
-        if usedask:
-            # Create delayed tasks for each iteration of the loop to compute force
-            tasks = []
-            # Create tasks for each grid position
-            for x in range(simxstart, simxstop):      # not simulating pulse electrons - like held by battery
-                for y in range(gridy):
-                    for z in range(gridz):
-                        task = delayed(compute_force)(x, y, z)
-                        tasks.append(task)
-
-            # Compute the tasks in parallel
-            forces_results = dask.compute(*tasks, scheduler='processes')  # can be processes or syncronous for debug
-            #forces_results = dask.compute(*tasks, scheduler='threads')  # can be processes or syncronous for debug
-
-            # Update the global forces array directly
-            idx = 0
-            for x in range(simxstart, simxstop):
-                for y in range(gridy):
-                    for z in range(gridz):
-                        forces[x, y, z] = forces_results[idx]
-                        idx += 1
-        else:
-            for x in range(simexstart, simxstop):
-                for y in range(gridy):
-                    compute_onepart(x,y)
+        calculate_forces()
 
         print("Updating position and velocity", t)
-        if usedask and False:
-            tasks = []
-            for x in range(simxstart, simxstop):
-                task = delayed(update_onepart)(x, dt)
-                tasks.append(task)
-            results = dask.compute(*tasks, scheduler='processes') # Use Dask to compute the tasks in parallel
-        else:
-            for x in range(simxstart, simxstop):
-                update_onepart(x,dt)
+        update_pv(dt)
 
     visualize_atoms(step, t)  # If we end at 200 we need last output
 
@@ -486,5 +415,4 @@ def main():
 
 
 if __name__ == '__main__':
-    multiprocessing.freeze_support()
     main()
