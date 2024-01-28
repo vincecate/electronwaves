@@ -110,6 +110,7 @@ gridx = 80   # To start only simulating few layers
 gridy = 40   # 30 can be down to 2 mins for 10 dt if all goes well
 gridz = 40   # 30 can be down to 2 mins for 10 dt if all goes well
 
+# With numpy 80,40,40 and simstop 40 is about 1 per minute
 
 # Declare global variables
 global fig, ax
