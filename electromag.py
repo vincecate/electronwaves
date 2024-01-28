@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 # Requires:
 # pip install numpy
-# pip install cupy
+# pip install cupy-cuda115
 # pip install matplotlib
 # pip install scipy
 # pip install dask
@@ -81,7 +81,7 @@
 #         If get to edge of wire need to reflect back - have square wire :-)
 #         For first simulation can start all with zero velocity
 
-use_gpu = False  # True means Cupy and GPY, False means NumPy and CPU
+use_gpu = True  # True means Cupy and GPY, False means NumPy and CPU
 
 if use_gpu:
     import cupy as cp
@@ -106,7 +106,7 @@ import os
 guion=False
 
 #grid_size = 40   # 30 can be down to 2 mins for 10 dt if all goes well
-gridx = 80   # To start only simulating few layers 
+gridx = 100   # To start only simulating few layers 
 gridy = 40   # 30 can be down to 2 mins for 10 dt if all goes well
 gridz = 40   # 30 can be down to 2 mins for 10 dt if all goes well
 
@@ -138,7 +138,7 @@ DisplaySteps = 1     # every so many simulation steps we call the visualize code
 visualize_plane_step = 5 # Only show every 3rd plane
 visualize_start= simxstart # really the 3rd plane since starts at 0
 visualize_stop = simxstop # really only goes up to one less than this but since starts at zero this many
-speedup = 300       # sort of rushing the simulation time
+speedup = 100       # sort of rushing the simulation time
 
 coulombs_constant = 1 / (4 * cp.pi * epsilon_0)  # Coulomb's constant 
 
@@ -219,7 +219,9 @@ def initialize_electron(x, y, z):
 
 #Want to make one window for all visualization steps - just update each loop
 
-
+#  Want to make visualization something we can hand off to a dask core to work on
+#   so we will put together something and hand it off 
+#   with 12 cores we can do well
 
 def initialize_visualization():
     global fig, ax  # Declare as global
