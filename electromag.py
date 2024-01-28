@@ -94,12 +94,10 @@ from scipy.constants import e, epsilon_0, electron_mass, elementary_charge, m_e,
 electron_charge=elementary_charge
 coulombs_constant = 8.9875517873681764e9  # Coulomb's constant
 
-#import dask
-#from dask import delayed
-#from dask.distributed import Client
-#import dask
-#import multiprocessing
-#usedask=True
+import dask
+from dask import delayed
+from dask.distributed import Client, wait
+import multiprocessing
 
 import os
 
@@ -120,7 +118,8 @@ electron_speed= 2188058
 
 
 # Atom spacing in meters
-atom_spacing = 3.34e-9  # 3.34 nanometers between atoms
+# atom_spacing = 3.34e-9  # 3.34 nanometers between atoms in hydrogen gas
+atom_spacing = 0.128e-9  # 3.34 nanometers between atoms in copper solid
 initial_radius = 5.29e-11 #  initial electron radius for hydrogen atom - got at least two times
 pulse_perc = 0.5 # really a ratio to initial radius but think like percent
 pulserange=5       # 0 to 4 will be given pulse
@@ -138,7 +137,7 @@ DisplaySteps = 1     # every so many simulation steps we call the visualize code
 visualize_plane_step = 10 # Only show every 3rd plane
 visualize_start= simxstart # really the 3rd plane since starts at 0
 visualize_stop = simxstop # really only goes up to one less than this but since starts at zero this many
-speedup = 50       # sort of rushing the simulation time
+speedup = 1       # sort of rushing the simulation time
 
 coulombs_constant = 1 / (4 * cp.pi * epsilon_0)  # Coulomb's constant 
 
@@ -180,74 +179,62 @@ def checkgpu():
 # forces
 # With numpy we had a class HydrogenAtom but no more with cupy.
 
-def initialize_electron(x, y, z):
-    global initial_radius, electron_velocities, electron_positions, nucleus_positions
+import cupy as cp
 
-    # Initial electron radius 
-    radius = initial_radius
-    nucleus_position = nucleus_positions[x, y, z]
+# Initialize the 3 of the main arrays (forces ok at zeros)
+def initialize_atoms():
+    global initial_radius, electron_velocities, electron_positions, nucleus_positions, gridx, gridy, gridz, atom_spacing, einitialmoving, electron_speed
 
-    # Random angle for the initial position
-    theta = cp.random.uniform(0, 2*cp.pi)
-    phi = cp.random.uniform(0, cp.pi)
+    # Initialize nucleus positions
+    x, y, z = cp.indices((gridx, gridy, gridz))
+    nucleus_positions = cp.stack((x, y, z), axis=-1) * atom_spacing
+
+    # Random angles for the initial positions
+    theta = cp.random.uniform(0, 2*cp.pi, size=(gridx, gridy, gridz))
+    phi = cp.random.uniform(0, cp.pi, size=(gridx, gridy, gridz))
 
     # Position in spherical coordinates
-    ex = nucleus_position[0] + radius * cp.sin(phi) * cp.cos(theta)
-    ey = nucleus_position[1] + radius * cp.sin(phi) * cp.sin(theta)
-    ez = nucleus_position[2] + radius * cp.cos(phi)
+    ex = nucleus_positions[..., 0] + initial_radius * cp.sin(phi) * cp.cos(theta)
+    ey = nucleus_positions[..., 1] + initial_radius * cp.sin(phi) * cp.sin(theta)
+    ez = nucleus_positions[..., 2] + initial_radius * cp.cos(phi)
 
-    electron_positions[x, y, z] = cp.array([ex, ey, ez])
+    electron_positions = cp.stack((ex, ey, ez), axis=-1)
 
-    # position done now velocity if supposed to
     if einitialmoving:
-        # Random direction perpendicular to the vector from nucleus to electron
-        electron_vector = electron_positions[x, y, z] - nucleus_positions[x, y, z]
-        random_vector = cp.random.random(3)  # Random vector
-        perpendicular_vector = cp.cross(electron_vector, random_vector)  # Cross product to ensure perpendicularity
-        normalized_vector = perpendicular_vector / cp.linalg.norm(perpendicular_vector)
+        # Random vectors
+        random_vectors = cp.random.random((gridx, gridy, gridz, 3))
 
-        electron_velocities[x, y, z] = normalized_vector * electron_speed
+        # Electron vectors
+        electron_vectors = electron_positions - nucleus_positions
+
+        # Perpendicular vectors
+        perpendicular_vectors = cp.cross(electron_vectors, random_vectors)
+
+        # Normalized vectors
+        norms = cp.linalg.norm(perpendicular_vectors, axis=-1, keepdims=True)
+        normalized_vectors = perpendicular_vectors / norms
+
+        electron_velocities = normalized_vectors * electron_speed
+    else:
+        electron_velocities = cp.zeros((gridx, gridy, gridz, 3))
 
 
 
-
-# Global 3D arrays with 3 unit arrays as data
-# nucleus_positions 
-# electron_positions 
-# electron_velocities 
-# forces
-
-#Want to make one window for all visualization steps - just update each loop
 
 #  Want to make visualization something we can hand off to a dask core to work on
 #   so we will put together something and hand it off 
 #   with 12 cores we can do well
+# For now nucleus_positions is a constant - doing electrons in wire first
+def visualize_atoms(epositions, evelocities, step, t):
+    global gridx, gridy, gridz, nucleus_positions, electron_speed, electron_velocities  # all these global are really constants
+    global visualize_start, visualize_stop, visualize_plane_step
 
-def initialize_visualization():
-    global fig, ax  # Declare as global
     fig = plt.figure(figsize=(12.8, 9.6))
-    plt.ion()  # non-blocking
     ax = fig.add_subplot(111, projection='3d')
-
-    # Ensure the simulation directory exists
-    os.makedirs('simulation', exist_ok=True)
-
-def clear_visualization():
-    global ax
     ax.clear()
     ax.set_xlabel('X')
     ax.set_ylabel('Y')
     ax.set_zlabel('Z')
-
-
-# New idea is to show the average electron Y position relative to nucleus in each plane x=0, x=1, ...
-# If there is a wave where Y is changing this would show it
-# To break into parts for different cores we need to
-#    combine min/max results
-#    probably not add things to ax.scatter inside different cores
-def visualize_atoms(step, t):
-    global gridx, gridy, gridz, electron_positions, nucleus_positions, electron_speed, electron_velocities
-    global visualize_start, visualize_stop, visualize_plane_step
 
     minxd = 10  # find electron with minimum Y distance from local nucleus
     maxxd = 0   # find electron with maximum Y distance from local nucleus
@@ -255,19 +242,16 @@ def visualize_atoms(step, t):
     maxs = 0   # find maximum speed of an electron
 
 
-    # Clear the previous plot
-    clear_visualization()  
-
     #  Could do safety check here and not include exlectrons out of bounds in visualization XXX
     for x in range(visualize_start, visualize_stop, visualize_plane_step):  # pulse at x=0,1,2  so first light will be 3
         totalxdiff=0.0
         for y in range(gridy):
             for z in range(gridz):
                 # we sometimes test without cupy by doing "import numpy as cp" 
-                if 'cupy' in str(type(electron_positions[x,y,z])):
-                    electron_pos = cp.asnumpy(electron_positions[x,y,z])
+                if 'cupy' in str(type(epositions[x,y,z])):
+                    electron_pos = cp.asnumpy(epositions[x,y,z])
                 else:
-                    electron_pos = electron_positions[x,y,z]
+                    electron_pos = epositions[x,y,z]
                 if 'cupy' in str(type(nucleus_positions[x,y,z])):
                     nucleus_pos = cp.asnumpy(nucleus_positions[x,y,z])
                 else:
@@ -285,7 +269,7 @@ def visualize_atoms(step, t):
                     minxd=normalized_distance
                 if(normalized_distance>maxxd):
                     maxxd=normalized_distance
-                speed = cp.linalg.norm(electron_velocities[x,y,z]);
+                speed = cp.linalg.norm(evelocities[x,y,z]);
                 if(speed<mins):
                     mins=speed
                 if(speed>maxs):
@@ -297,10 +281,6 @@ def visualize_atoms(step, t):
     # Use os.path.join to create the file path
     filename = os.path.join('simulation', f'step_{step}.png')
     plt.savefig(filename)
-    if (guion):
-         plt.show()
-    # Process GUI events and wait briefly to keep the GUI responsive
-    plt.pause(0.001)
 
     print("minxd  =",minxd)
     print("maxxd  =",maxxd)
@@ -310,20 +290,6 @@ def visualize_atoms(step, t):
 
 
 
-# Global 3D arrays with 3 unit arrays as data
-# nucleus_positions 
-# electron_positions 
-# electron_velocities 
-# forces
-# Initialize the 3 of the main arrays (forces ok at zeros)
-def initialize_atoms():
-    global nucleus_positions
-
-    for x in range(gridx):
-        for y in range(gridy):
-            for z in range(gridz):
-                nucleus_positions[x, y, z] = cp.array([x, y, z]) * atom_spacing
-                initialize_electron(x, y, z)   # both position and velocity of electron 
 
 # Need to make Initial pulse by moving few rows of electrons 
 #
@@ -398,10 +364,18 @@ def main():
     print("In main")
     checkgpu()
     initialize_atoms()
-    initialize_visualization()
-    visualize_atoms(-1, 0)       # want one visualize right before pulse and one right after - mod 0 is 0 after ok
-    pulse()
+    os.makedirs('simulation', exist_ok=True) # Ensure the simulation directory exists
 
+    client= Client(n_workers=24)
+    futures = []
+
+    print("Doing first visualization")
+    copypositions=electron_positions.copy()
+    copyvelocities=electron_velocities.copy()
+    future = client.submit(visualize_atoms, copypositions, copyvelocities, -1, 0.0)
+    futures.append(future)
+    print("Doing pulse")
+    pulse()
     # main simulation loop
     dt = speedup*simxstop*atom_spacing/c/num_steps  # would like total simulation time to be long enough for light wave to just cross grid 
     for step in range(num_steps):
@@ -410,8 +384,10 @@ def main():
 
         if step % DisplaySteps == 0:
             print("Display", step)
-            visualize_atoms(step, t)
-        #plt.pause(0.01)
+            copypositions=electron_positions.copy()
+            copyvelocities=electron_velocities.copy()
+            future = client.submit(visualize_atoms, copypositions, copyvelocities, step, t)
+            futures.append(future)
 
         print("Updating force", step)
         forces=calculate_forces()
@@ -419,8 +395,11 @@ def main():
         print("Updating position and velocity", t)
         electron_positions,electron_velocities=update_pv(dt)
 
-    visualize_atoms(step, t)  # If we end at 200 we need last output
-
+    copypositions=electron_positions.copy()
+    copyvelocities=electron_velocities.copy()
+    future = client.submit(visualize_atoms, copypositions, copyvelocities, step, t) # If we end at 200 we need last output
+    futures.append(future)
+    wait(futures)
 
 
 
