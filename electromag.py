@@ -134,7 +134,7 @@ bounds = ((-1.0*atom_spacing, (gridx+1)*atom_spacing), (-1.0*atom_spacing, (grid
 # Time stepping
 num_steps =  200
 DisplaySteps = 1     # every so many simulation steps we call the visualize code
-visualize_plane_step = int(simxstop/7) # Only show one every this many planes in data
+visualize_plane_step = 25 # think failed with int(simxstop/7) # Only show one every this many planes in data
 visualize_start= simxstart # have initial pulse electrons we don't really want to see 
 visualize_stop = simxstop # really only goes up to one less than this but since starts at zero this many
 speedup = 5       # sort of rushing the simulation time
@@ -368,7 +368,7 @@ def main():
 
 
     # Create a LocalCluster with a custom death timeout and then a Client
-    cluster = LocalCluster(n_workers=12, death_timeout='60s')
+    cluster = LocalCluster(n_workers=24, death_timeout='600s')
     client= Client(cluster)
     futures = []
 
