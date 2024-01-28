@@ -96,7 +96,7 @@ coulombs_constant = 8.9875517873681764e9  # Coulomb's constant
 
 import dask
 from dask import delayed
-from dask.distributed import Client, wait
+from dask.distributed import Client, wait, LocalCluster
 import multiprocessing
 
 import os
@@ -104,7 +104,7 @@ import os
 guion=False
 
 #grid_size = 40   # 30 can be down to 2 mins for 10 dt if all goes well
-gridx = 100   # To start only simulating few layers 
+gridx = 200   # To start only simulating few layers 
 gridy = 50   # 30 can be down to 2 mins for 10 dt if all goes well
 gridz = 50   # 30 can be down to 2 mins for 10 dt if all goes well
 
@@ -134,10 +134,10 @@ bounds = ((-1.0*atom_spacing, (gridx+1)*atom_spacing), (-1.0*atom_spacing, (grid
 # Time stepping
 num_steps =  200
 DisplaySteps = 1     # every so many simulation steps we call the visualize code
-visualize_plane_step = 10 # Only show every 3rd plane
-visualize_start= simxstart # really the 3rd plane since starts at 0
+visualize_plane_step = int(simxstop/7) # Only show one every this many planes in data
+visualize_start= simxstart # have initial pulse electrons we don't really want to see 
 visualize_stop = simxstop # really only goes up to one less than this but since starts at zero this many
-speedup = 1       # sort of rushing the simulation time
+speedup = 5       # sort of rushing the simulation time
 
 coulombs_constant = 1 / (4 * cp.pi * epsilon_0)  # Coulomb's constant 
 
@@ -366,7 +366,10 @@ def main():
     initialize_atoms()
     os.makedirs('simulation', exist_ok=True) # Ensure the simulation directory exists
 
-    client= Client(n_workers=24)
+
+    # Create a LocalCluster with a custom death timeout and then a Client
+    cluster = LocalCluster(n_workers=12, death_timeout='60s')
+    client= Client(cluster)
     futures = []
 
     print("Doing first visualization")
