@@ -107,8 +107,8 @@ guion=False
 
 #grid_size = 40   # 30 can be down to 2 mins for 10 dt if all goes well
 gridx = 100   # To start only simulating few layers 
-gridy = 40   # 30 can be down to 2 mins for 10 dt if all goes well
-gridz = 40   # 30 can be down to 2 mins for 10 dt if all goes well
+gridy = 50   # 30 can be down to 2 mins for 10 dt if all goes well
+gridz = 50   # 30 can be down to 2 mins for 10 dt if all goes well
 
 # With numpy 80,40,40 and simstop 40 is about 1 per minute
 
@@ -135,10 +135,10 @@ bounds = ((-1.0*atom_spacing, (gridx+1)*atom_spacing), (-1.0*atom_spacing, (grid
 # Time stepping
 num_steps =  200
 DisplaySteps = 1     # every so many simulation steps we call the visualize code
-visualize_plane_step = 5 # Only show every 3rd plane
+visualize_plane_step = 10 # Only show every 3rd plane
 visualize_start= simxstart # really the 3rd plane since starts at 0
 visualize_stop = simxstop # really only goes up to one less than this but since starts at zero this many
-speedup = 100       # sort of rushing the simulation time
+speedup = 50       # sort of rushing the simulation time
 
 coulombs_constant = 1 / (4 * cp.pi * epsilon_0)  # Coulomb's constant 
 
