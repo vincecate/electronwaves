@@ -84,6 +84,7 @@
 import cupy as cp
 import numpy as np   # numpy as np for CPU and now just for visualization 
 import matplotlib.pyplot as plt
+from matplotlib.ticker import ScalarFormatter
 from scipy.constants import e, epsilon_0, electron_mass, elementary_charge, m_e, c    # m_e is mass of electrong 
 electron_charge=elementary_charge
 coulombs_constant = 8.9875517873681764e9  # Coulomb's constant
@@ -222,6 +223,12 @@ def visualize_atoms(epositions, evelocities, step, t):
     ax.set_xlim(bounds[0])   # set display bounds
     ax.set_ylim(bounds[1])
     ax.set_zlim(bounds[2])
+
+
+    formatter = ScalarFormatter(useOffset=False, useMathText=True)
+    ax.xaxis.set_major_formatter(formatter)
+    ax.yaxis.set_major_formatter(formatter)
+    ax.zaxis.set_major_formatter(formatter)
 
 
     minxd = 10  # find electron with minimum Y distance from local nucleus
