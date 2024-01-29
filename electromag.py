@@ -81,13 +81,7 @@
 #         If get to edge of wire need to reflect back - have square wire :-)
 #         For first simulation can start all with zero velocity
 
-use_gpu = True  # True means Cupy and GPY, False means NumPy and CPU
-
-if use_gpu:
-    import cupy as cp
-else:
-    import numpy as cp
-
+import cupy as cp
 import numpy as np   # numpy as np for CPU and now just for visualization 
 import matplotlib.pyplot as plt
 from scipy.constants import e, epsilon_0, electron_mass, elementary_charge, m_e, c    # m_e is mass of electrong 
@@ -101,17 +95,14 @@ import multiprocessing
 
 import os
 
-guion=False
+gridx = 100   # 
+gridy = 50   # 
+gridz = 50   # 
 
-#grid_size = 40   # 30 can be down to 2 mins for 10 dt if all goes well
-gridx = 200   # To start only simulating few layers 
-gridy = 50   # 30 can be down to 2 mins for 10 dt if all goes well
-gridz = 50   # 30 can be down to 2 mins for 10 dt if all goes well
+# With numpy 80,40,40 and visualizestop 40 is about 1 per minute
+# With cupy and dask 200,50,50 and visualizestop 100 is 10 frams per minute 
+# With cupy and dask 400, 50, 50 took 3 minutes per frame - ug another running at same time
 
-# With numpy 80,40,40 and simstop 40 is about 1 per minute
-
-# Declare global variables
-global fig, ax
 # Initial electron speed 2,178,278 m/s
 # electron_speed= 2178278  
 electron_speed= 2188058
@@ -121,7 +112,7 @@ electron_speed= 2188058
 # atom_spacing = 3.34e-9  # 3.34 nanometers between atoms in hydrogen gas
 atom_spacing = 0.128e-9  # 3.34 nanometers between atoms in copper solid
 initial_radius = 5.29e-11 #  initial electron radius for hydrogen atom - got at least two times
-pulse_perc = 0.5 # really a ratio to initial radius but think like percent
+pulse_offset = 0.2e-9     #  how much the first few planes are offset
 pulserange=5       # 0 to 4 will be given pulse
 simxstart=pulserange-1   # we don't bother simulating the pulse electrons
 simxstop=int(gridx/2)        # want wire in front not to move or suck electrons by not being there
@@ -129,15 +120,15 @@ pulsehalf=False    # True to only pulse half the plane
 einitialmoving=False          # can have electrons initialized to moving if True and not moving if False
 
 # bounds format is  ((minx,  maxx) , (miny, maxy), (minz, maxz))
-bounds = ((-1.0*atom_spacing, (gridx+1)*atom_spacing), (-1.0*atom_spacing, (gridy+1)*atom_spacing), (-1.0*atom_spacing, (gridz+1)*atom_spacing))
+bounds = ((-1.0*atom_spacing, (gridx+1.0)*atom_spacing), (-1.0*atom_spacing, (gridy+1.0)*atom_spacing), (-1.0*atom_spacing, (gridz+1.0)*atom_spacing))
 
 # Time stepping
 num_steps =  200
 DisplaySteps = 1     # every so many simulation steps we call the visualize code
-visualize_plane_step = 20 # think failed with int(simxstop/7) # Only show one every this many planes in data
+visualize_plane_step = int((simxstop-simxstart)/7) # think failed with int(simxstop/7) # Only show one every this many planes in data
 visualize_start= simxstart # have initial pulse electrons we don't really want to see 
 visualize_stop = simxstop # really only goes up to one less than this but since starts at zero this many
-speedup = 1       # sort of rushing the simulation time
+speedup = 10       # sort of rushing the simulation time
 
 coulombs_constant = 1 / (4 * cp.pi * epsilon_0)  # Coulomb's constant 
 
@@ -172,14 +163,6 @@ def checkgpu():
 
 
 
-# Global 3D arrays with 3 unit arrays as data
-# nucleus_positions 
-# electron_positions 
-# electron_velocities 
-# forces
-# With numpy we had a class HydrogenAtom but no more with cupy.
-
-import cupy as cp
 
 # Initialize the 3 of the main arrays (forces ok at zeros)
 def initialize_atoms():
@@ -226,15 +209,20 @@ def initialize_atoms():
 #   with 12 cores we can do well
 # For now nucleus_positions is a constant - doing electrons in wire first
 def visualize_atoms(epositions, evelocities, step, t):
-    global gridx, gridy, gridz, nucleus_positions, electron_speed, electron_velocities  # all these global are really constants
+    global gridx, gridy, gridz, bounds, nucleus_positions, electron_speed, electron_velocities  # all these global are really constants
     global visualize_start, visualize_stop, visualize_plane_step
 
     fig = plt.figure(figsize=(12.8, 9.6))
     ax = fig.add_subplot(111, projection='3d')
-    ax.clear()
+    # ax.clear()  Think not needed anymore
     ax.set_xlabel('X')
     ax.set_ylabel('Y')
     ax.set_zlabel('Z')
+
+    ax.set_xlim(bounds[0])   # set display bounds
+    ax.set_ylim(bounds[1])
+    ax.set_zlim(bounds[2])
+
 
     minxd = 10  # find electron with minimum Y distance from local nucleus
     maxxd = 0   # find electron with maximum Y distance from local nucleus
@@ -296,15 +284,14 @@ def visualize_atoms(epositions, evelocities, step, t):
 # Displace electrons in half the first 3 x layers
 # transverse wave so in x=0 plane we displace in the x direction
 def pulse():
-    global pulserange
-    displacement = pulse_perc * initial_radius
+    global pulserange, pulse_offset
     yrange=gridy
     if pulsehalf:
         yrange=int(gridy/2)
     for x in range(0,pulserange):
         for y in range(yrange):
             for z in range(gridz):
-                electron_positions[x,y,z][0] += displacement
+                electron_positions[x,y,z][0] += pulse_offset
 
 
 def calculate_forces():
