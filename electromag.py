@@ -80,6 +80,9 @@
 #     Ignor nucleus and think of electrons in a wire.
 #         If get to edge of wire need to reflect back - have square wire :-)
 #         For first simulation can start all with zero velocity
+# At room temperature a ratio of 1 electron in 100,000 copper atoms is really free.
+#   Same as saying only 0.001% or 10^-5 of the conduction electrons are free.
+
 
 import cupy as cp
 import numpy as np   # numpy as np for CPU and now just for visualization 
@@ -110,8 +113,9 @@ electron_speed= 2188058
 
 
 # Atom spacing in meters
-# atom_spacing = 3.34e-9  # 3.34 nanometers between atoms in hydrogen gas
-atom_spacing = 0.128e-9  # 3.34 nanometers between atoms in copper solid
+hydrogen_spacing = 3.34e-9  # 3.34 nanometers between atoms in hydrogen gas
+copper_spacing = 0.128e-9  # 3.34 nanometers between atoms in copper solid
+initial_spacing = copper_spacing*47  # 47^3 is about 100,000 and 1 free electron for every 100,000 copper atoms
 initial_radius = 5.29e-11 #  initial electron radius for hydrogen atom - got at least two times
 pulse_offset = 0.2e-9     #  how much the first few planes are offset
 pulserange=5       # 0 to 4 will be given pulse
@@ -121,7 +125,7 @@ pulsehalf=False    # True to only pulse half the plane
 einitialmoving=False          # can have electrons initialized to moving if True and not moving if False
 
 # bounds format is  ((minx,  maxx) , (miny, maxy), (minz, maxz))
-bounds = ((-1.0*atom_spacing, (gridx+1.0)*atom_spacing), (-1.0*atom_spacing, (gridy+1.0)*atom_spacing), (-1.0*atom_spacing, (gridz+1.0)*atom_spacing))
+bounds = ((-1.0*initial_spacing, (gridx+1.0)*initial_spacing), (-1.0*initial_spacing, (gridy+1.0)*initial_spacing), (-1.0*initial_spacing, (gridz+1.0)*initial_spacing))
 
 # Time stepping
 num_steps =  200
@@ -129,7 +133,7 @@ DisplaySteps = 1     # every so many simulation steps we call the visualize code
 visualize_plane_step = int((simxstop-simxstart)/7) # think failed with int(simxstop/7) # Only show one every this many planes in data
 visualize_start= simxstart # have initial pulse electrons we don't really want to see 
 visualize_stop = simxstop # really only goes up to one less than this but since starts at zero this many
-speedup = 10       # sort of rushing the simulation time
+speedup = 40       # sort of rushing the simulation time
 
 coulombs_constant = 1 / (4 * cp.pi * epsilon_0)  # Coulomb's constant 
 
@@ -167,11 +171,11 @@ def checkgpu():
 
 # Initialize the 3 of the main arrays (forces ok at zeros)
 def initialize_atoms():
-    global initial_radius, electron_velocities, electron_positions, nucleus_positions, gridx, gridy, gridz, atom_spacing, einitialmoving, electron_speed
+    global initial_radius, electron_velocities, electron_positions, nucleus_positions, gridx, gridy, gridz, initial_spacing, einitialmoving, electron_speed
 
     # Initialize nucleus positions
     x, y, z = cp.indices((gridx, gridy, gridz))
-    nucleus_positions = cp.stack((x, y, z), axis=-1) * atom_spacing
+    nucleus_positions = cp.stack((x, y, z), axis=-1) * initial_spacing
 
     # Random angles for the initial positions
     theta = cp.random.uniform(0, 2*cp.pi, size=(gridx, gridy, gridz))
@@ -220,16 +224,30 @@ def visualize_atoms(epositions, evelocities, step, t):
     ax.set_ylabel('Y')
     ax.set_zlabel('Z')
 
-    ax.set_xlim(bounds[0])   # set display bounds
+    maxx = simxstop*initial_spacing
+    ax.set_xlim(bounds[0][0],maxx)   # set display bounds
     ax.set_ylim(bounds[1])
     ax.set_zlim(bounds[2])
 
 
-    formatter = ScalarFormatter(useOffset=False, useMathText=True)
-    ax.xaxis.set_major_formatter(formatter)
-    ax.yaxis.set_major_formatter(formatter)
-    ax.zaxis.set_major_formatter(formatter)
+   # formatter = ScalarFormatter(useOffset=False, useMathText=True)
+   # ax.xaxis.set_major_formatter(formatter)
+   # ax.yaxis.set_major_formatter(formatter)
+   # ax.zaxis.set_major_formatter(formatter)
 
+
+    # Example: setting ticks for the X-axis
+    x_ticks = np.linspace(bounds[0][0], maxx, num=7) # Adjust 'num' for the number of ticks
+    ax.set_xticks(x_ticks)
+    ax.set_xticklabels([f"{tick:.2e}" for tick in x_ticks]) # Formatting to scientific notation
+
+    y_ticks = np.linspace(bounds[1][0], bounds[1][1], num=7) # Adjust 'num' for the number of ticks
+    ax.set_yticks(y_ticks)
+    ax.set_yticklabels([f"{tick:.2e}" for tick in x_ticks]) # Formatting to scientific notation
+
+    z_ticks = np.linspace(bounds[2][0], bounds[2][1], num=7) # Adjust 'num' for the number of ticks
+    ax.set_zticks(z_ticks)
+    ax.set_zticklabels([f"{tick:.2e}" for tick in x_ticks]) # Formatting to scientific notation
 
     minxd = 10  # find electron with minimum Y distance from local nucleus
     maxxd = 0   # find electron with maximum Y distance from local nucleus
@@ -353,7 +371,7 @@ def update_pv(dt):
 
 
 def main():
-    global gridx, gridy, gridz, atom_spacing, num_steps, plt, speedup, forces, electron_positions, electron_velocities
+    global gridx, gridy, gridz, initial_spacing, num_steps, plt, speedup, forces, electron_positions, electron_velocities
 
     print("In main")
     checkgpu()
@@ -374,7 +392,7 @@ def main():
     print("Doing pulse")
     pulse()
     # main simulation loop
-    dt = speedup*simxstop*atom_spacing/c/num_steps  # would like total simulation time to be long enough for light wave to just cross grid 
+    dt = speedup*simxstop*initial_spacing/c/num_steps  # would like total simulation time to be long enough for light wave to just cross grid 
     for step in range(num_steps):
         t = step * dt
         print("In main", step)
