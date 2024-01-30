@@ -99,11 +99,11 @@ import multiprocessing
 
 import os
 
-gridx = 300   # 
-gridy = 100   # 
-gridz = 100   # 
+gridx = 400   # 
+gridy = 50   # 
+gridz = 50   # 
 
-# with visualize_wire we can do 300,100,100 in about 5 minutes per step
+# with visualize_wire we can do 300,100,100 in about 2 minutes per step
 # With numpy 80,40,40 and visualizestop 40 is about 1 per minute
 # With cupy and dask 200,50,50 and visualizestop 100 is 10 frams per minute 
 # With cupy and dask 400, 50, 50 took 3 minutes per frame - ug another running at same time
@@ -119,7 +119,7 @@ copper_spacing = 0.128e-9  # 3.34 nanometers between atoms in copper solid
 initial_spacing = copper_spacing*47  # 47^3 is about 100,000 and 1 free electron for every 100,000 copper atoms
 initial_radius = 5.29e-11 #  initial electron radius for hydrogen atom - got at least two times
 pulse_offset = 0.2e-9     #  how much the first few planes are offset
-pulserange=5       # 0 to 4 will be given pulse
+pulserange=20       # 0 to 4 will be given pulse
 simxstart=pulserange-1   # we don't bother simulating the pulse electrons
 simxstop=int(gridx/2)        # want wire in front not to move or suck electrons by not being there
 pulsehalf=False    # True to only pulse half the plane
@@ -389,27 +389,40 @@ def calculate_forces():
 def update_pv(dt):
     global electron_velocities, electron_positions, bounds, forces, electron_mass
 
-    # Update velocities based on acceleration (F = ma)
+    # acceleration based ono F=ma
     acceleration = forces / electron_mass
+
+    # Update velocities
     new_velocities = electron_velocities + acceleration * dt
 
     # Update positions using vectors
     new_positions = electron_positions + new_velocities * dt
 
+
+    # Create a mask for X indices that should be updated
+    # Generate an array representing the X indices
+    x_indices = cp.arange(gridx).reshape(gridx, 1, 1, 1)  # Reshape for broadcasting
+    # Create a boolean mask where True indicates the indices to be updated
+    update_mask = x_indices > pulserange
+
+    # Apply updates using the mask for selective application
+    electron_velocities = cp.where(update_mask, new_velocities, electron_velocities)
+    electron_positions = cp.where(update_mask, new_positions, electron_positions)
+
+    # keep things in bounds
     for i, (min_bound, max_bound) in enumerate(bounds):
         # Check for upper boundary
         over_max = new_positions[..., i] > max_bound
-        new_positions[..., i][over_max] = max_bound
-        new_velocities[..., i][over_max] *= -1
+        electron_positions[..., i][over_max] = max_bound
+        electron_velocities[..., i][over_max] *= -1
 
         # Check for lower boundary
-        below_min = new_positions[..., i] < min_bound
-        new_positions[..., i][below_min] = min_bound
-        new_velocities[..., i][below_min] *= -1
+        below_min = electron_positions[..., i] < min_bound
+        electron_positions[..., i][below_min] = min_bound
+        electron_velocities[..., i][below_min] *= -1
 
-    print("Max positions:", cp.max(cp.linalg.norm(new_positions, axis=1)))
-    print("Max velocity:", cp.max(cp.linalg.norm(new_velocities, axis=1)))
-    return(new_positions, new_velocities)
+    print("Max positions:", cp.max(cp.linalg.norm(electron_positions, axis=1)))
+    print("Max velocity:", cp.max(cp.linalg.norm(electron_velocities, axis=1)))
 
 
 def main():
@@ -455,7 +468,7 @@ def main():
         forces=calculate_forces()
 
         print("Updating position and velocity", t)
-        electron_positions,electron_velocities=update_pv(dt)
+        update_pv(dt)
 
     copypositions=electron_positions.copy()
     copyvelocities=electron_velocities.copy()
