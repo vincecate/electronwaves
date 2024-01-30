@@ -88,7 +88,7 @@ import cupy as cp
 import numpy as np   # numpy as np for CPU and now just for visualization 
 import matplotlib.pyplot as plt
 from matplotlib.ticker import ScalarFormatter
-from scipy.constants import e, epsilon_0, electron_mass, elementary_charge, m_e, c    # m_e is mass of electrong 
+from scipy.constants import e, epsilon_0, electron_mass, elementary_charge, c    
 electron_charge=elementary_charge
 coulombs_constant = 8.9875517873681764e9  # Coulomb's constant
 
@@ -348,14 +348,14 @@ def calculate_forces():
 
 
 def update_pv(dt):
-    global electron_velocities, electron_positions, bounds, forces, m_e
+    global electron_velocities, electron_positions, bounds, forces, electron_mass
 
     # Update velocities based on acceleration (F = ma)
-    acceleration = forces / m_e
+    acceleration = forces / electron_mass
     new_velocities = electron_velocities + acceleration * dt
 
     # Update positions using vectors
-    new_positions = electron_positions + electron_velocities * dt
+    new_positions = electron_positions + new_velocities * dt
 
     for i, (min_bound, max_bound) in enumerate(bounds):
         # Check for upper boundary
