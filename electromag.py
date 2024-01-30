@@ -128,12 +128,13 @@ einitialmoving=False          # can have electrons initialized to moving if True
 bounds = ((-1.0*initial_spacing, (gridx+1.0)*initial_spacing), (-1.0*initial_spacing, (gridy+1.0)*initial_spacing), (-1.0*initial_spacing, (gridz+1.0)*initial_spacing))
 
 # Time stepping
-num_steps =  200
-DisplaySteps = 1     # every so many simulation steps we call the visualize code
+num_steps =  400     # how many simulation steps
+DisplaySteps = 20     # every so many simulation steps we call the visualize code
 visualize_plane_step = int((simxstop-simxstart)/7) # think failed with int(simxstop/7) # Only show one every this many planes in data
 visualize_start= simxstart # have initial pulse electrons we don't really want to see 
 visualize_stop = simxstop # really only goes up to one less than this but since starts at zero this many
-speedup = 40       # sort of rushing the simulation time
+speedup = 80       # sort of rushing the simulation time
+dt = speedup*simxstop*initial_spacing/c/num_steps  # would like total simulation time to be long enough for light wave to just cross grid 
 
 coulombs_constant = 1 / (4 * cp.pi * epsilon_0)  # Coulomb's constant 
 
@@ -171,6 +172,7 @@ def checkgpu():
 
 # Initialize the 3 of the main arrays (forces ok at zeros)
 def initialize_atoms():
+
     global initial_radius, electron_velocities, electron_positions, nucleus_positions, gridx, gridy, gridz, initial_spacing, einitialmoving, electron_speed
 
     # Initialize nucleus positions
@@ -300,6 +302,7 @@ def visualize_atoms(epositions, evelocities, step, t):
     print("mins  =",mins)
     print("maxs  =",maxs)
 
+    del epositions, evelocities     # we don't need copy here any more - telling garbage collector
 
 
 
@@ -371,7 +374,7 @@ def update_pv(dt):
 
 
 def main():
-    global gridx, gridy, gridz, initial_spacing, num_steps, plt, speedup, forces, electron_positions, electron_velocities
+    global gridx, gridy, gridz, initial_spacing, num_steps, speedup, forces, electron_positions, electron_velocities, dt
 
     print("In main")
     checkgpu()
@@ -389,10 +392,10 @@ def main():
     copyvelocities=electron_velocities.copy()
     future = client.submit(visualize_atoms, copypositions, copyvelocities, -1, 0.0)
     futures.append(future)
+    del copypositions, copyvelocities     # we don't need copy here any more - telling garbage collector
     print("Doing pulse")
     pulse()
     # main simulation loop
-    dt = speedup*simxstop*initial_spacing/c/num_steps  # would like total simulation time to be long enough for light wave to just cross grid 
     for step in range(num_steps):
         t = step * dt
         print("In main", step)
@@ -403,6 +406,7 @@ def main():
             copyvelocities=electron_velocities.copy()
             future = client.submit(visualize_atoms, copypositions, copyvelocities, step, t)
             futures.append(future)
+            del copypositions, copyvelocities     # we don't need copy here any more - telling garbage collector
 
         print("Updating force", step)
         forces=calculate_forces()
@@ -414,6 +418,7 @@ def main():
     copyvelocities=electron_velocities.copy()
     future = client.submit(visualize_atoms, copypositions, copyvelocities, step, t) # If we end at 200 we need last output
     futures.append(future)
+    del copypositions, copyvelocities     # we don't need copy here any more - telling garbage collector
     wait(futures)
 
 
