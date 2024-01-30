@@ -99,10 +99,11 @@ import multiprocessing
 
 import os
 
-gridx = 100   # 
-gridy = 50   # 
-gridz = 50   # 
+gridx = 300   # 
+gridy = 100   # 
+gridz = 100   # 
 
+# with visualize_wire we can do 300,100,100 in about 5 minutes per step
 # With numpy 80,40,40 and visualizestop 40 is about 1 per minute
 # With cupy and dask 200,50,50 and visualizestop 100 is 10 frams per minute 
 # With cupy and dask 400, 50, 50 took 3 minutes per frame - ug another running at same time
@@ -129,7 +130,8 @@ bounds = ((-1.0*initial_spacing, (gridx+1.0)*initial_spacing), (-1.0*initial_spa
 
 # Time stepping
 num_steps =  400     # how many simulation steps
-DisplaySteps = 20     # every so many simulation steps we call the visualize code
+DisplaySteps = 5000   # every so many simulation steps we call the visualize code
+WireSteps = 1     # every so many simulation steps we call the visualize code
 visualize_plane_step = int((simxstop-simxstart)/7) # think failed with int(simxstop/7) # Only show one every this many planes in data
 visualize_start= simxstart # have initial pulse electrons we don't really want to see 
 visualize_stop = simxstop # really only goes up to one less than this but since starts at zero this many
@@ -303,8 +305,42 @@ def visualize_atoms(epositions, evelocities, step, t):
     print("maxs  =",maxs)
 
     del epositions, evelocities     # we don't need copy here any more - telling garbage collector
+    plt.close(fig)  # Close the figure to free memory
 
 
+
+# The wire runs in the X direction and electrons at each grid X,Y,Z 
+# have an x,y,z position that started near nucleus x,y,z
+# Want to know how far the average in each X slice of the wire has moved in the x direction
+# as electrical signal in simulation should be moving in that direction
+def calculate_wire(epositions):
+    global gridx, gridy, gridz, nucleus_positions
+
+    # Calculate the difference in the x-direction
+    xdiff = epositions[:,:,:,0] - nucleus_positions[:,:,:,0]
+
+    # Calculate the total difference for each x slice
+    totalxdiff = cp.sum(xdiff, axis=(1, 2))  # Summing over y and z axes
+
+    # Calculate the average difference for each x slice
+    averaged_xdiff = totalxdiff / (gridy * gridz)
+
+    return(averaged_xdiff)
+
+def visualize_wire(averaged_xdiff, step, t):
+    # Plotting
+    fig, ax = plt.subplots(figsize=(12.8, 9.6))
+    ax.plot(cp.asnumpy(averaged_xdiff), marker='o')  # Convert to NumPy array for plotting
+
+    ax.set_xlabel('X index')
+    ax.set_ylabel('Average X Difference')
+    ax.set_title(f'Average X Difference per X Slice\nStep {step}  Simulation Time: {t} seconds')
+    ax.grid(True)
+
+    # Save the figure
+    filename = os.path.join('simulation', f'wire_{step}.png')
+    plt.savefig(filename)
+    plt.close(fig)  # Close the figure to free memory
 
 
 # Need to make Initial pulse by moving few rows of electrons 
@@ -320,6 +356,9 @@ def pulse():
         for y in range(yrange):
             for z in range(gridz):
                 electron_positions[x,y,z][0] += pulse_offset
+
+
+
 
 
 def calculate_forces():
@@ -399,7 +438,11 @@ def main():
     for step in range(num_steps):
         t = step * dt
         print("In main", step)
-
+        if step % WireSteps == 0:
+            WireStatus=calculate_wire(electron_positions)
+            future = client.submit(visualize_wire, WireStatus, step, t)
+            futures.append(future)
+            del WireStatus
         if step % DisplaySteps == 0:
             print("Display", step)
             copypositions=electron_positions.copy()
