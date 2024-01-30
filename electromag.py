@@ -404,7 +404,7 @@ def update_pv(dt):
     x_indices = cp.arange(gridx).reshape(gridx, 1, 1, 1)  # Reshape for broadcasting
     # Create a boolean mask where True indicates the indices to be updated
     # Don't update the first pulserange slices or the last pulserange slices
-    update_mask = (x_indices > pulserange) and (x_indices < (gridx-pulserange))
+    update_mask = (x_indices > pulserange) & (x_indices < (gridx-pulserange))
 
     # Apply updates using the mask for selective application
     electron_velocities = cp.where(update_mask, new_velocities, electron_velocities)
