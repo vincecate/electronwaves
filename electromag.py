@@ -103,7 +103,8 @@ gridx = 1500   #
 gridy = 20   # 
 gridz = 20   # 
 
-pulserange=500       # how many planes will be given pulse
+pulse_range=700       # how many planes will be given pulse
+sim_pulse = 0.5       # what fraction of pulse we will simulate - rest is still
 
 # can do 1500 20 20
 # 3200 20 20, 2000 20 20  runs out of memory
@@ -123,7 +124,8 @@ hydrogen_spacing = 3.34e-9  # 3.34 nanometers between atoms in hydrogen gas
 copper_spacing = 0.128e-9  # 3.34 nanometers between atoms in copper solid
 initial_spacing = copper_spacing*47  # 47^3 is about 100,000 and 1 free electron for every 100,000 copper atoms
 initial_radius = 5.29e-11 #  initial electron radius for hydrogen atom - got at least two times
-pulse_offset = 1*initial_spacing    #  how much the first few planes are offset
+pulse_offset = 0.05*initial_spacing    #  how much the first few planes are offset
+pulse_speed = 10000000    # in meters per second -  tiny speed 
 pulsehalf=False    # True to only pulse half the plane
 einitialmoving=False          # can have electrons initialized to moving if True and not moving if False
 
@@ -133,19 +135,19 @@ bounds = ((0, gridx*initial_spacing), (0, gridy*initial_spacing), (0, gridz*init
 
 # Time stepping
 num_steps =  400     # how many simulation steps
-DisplaySteps = 5000   # every so many simulation steps we call the visualize code
-WireSteps = 1     # every so many simulation steps we call the visualize code
-visualize_start= pulserange-2 # have initial pulse electrons we don't really want to see 
+DisplaySteps = 50    # every so many simulation steps we call the visualize code
+WireSteps = 1        # every so many simulation steps we call the visualize code
+visualize_start= pulse_range-2 # have initial pulse electrons we don't really want to see 
 visualize_stop = int(gridx/2) # really only goes up to one less than this but since starts at zero this many
 visualize_plane_step = int((visualize_stop-visualize_start)/7) # Only show one every this many planes in data
 speedup = 20       # sort of rushing the simulation time
-proprange=gridx-(2*pulserange) # not simulating either end of the wire so only middle range for signal to propagage
+proprange=gridx-(2*pulse_range) # not simulating either end of the wire so only middle range for signal to propagage
 dt = speedup*proprange*initial_spacing/c/num_steps  # would like total simulation time to be long enough for light wave to just cross grid 
 
 coulombs_constant = 1 / (4 * cp.pi * epsilon_0)  # Coulomb's constant 
 
 # Make string of some settings to put on output graph 
-sim_settings = f"gridx {gridx} gridy {gridy} gridz {gridz} speedup {speedup} Spacing: {initial_spacing:.8e} Pulse {pulse_offset:.8e} Steps: {num_steps}"
+sim_settings = f"gridx {gridx} gridy {gridy} gridz {gridz} speedup {speedup} Spacing: {initial_spacing:.8e} PulseS {pulse_speed:.8e} PulseO {pulse_offset:.8e} Steps: {num_steps}"
 
 
 
@@ -235,8 +237,9 @@ def visualize_atoms(epositions, evelocities, step, t):
     ax.set_ylabel('Y')
     ax.set_zlabel('Z')
 
+    minx = visualize_start*initial_spacing
     maxx = visualize_stop*initial_spacing
-    ax.set_xlim(bounds[0][0],maxx)   # set display bounds
+    ax.set_xlim(minx,maxx)   # set display bounds which are different than simulation bounds
     ax.set_ylim(bounds[1])
     ax.set_zlim(bounds[2])
 
@@ -248,7 +251,7 @@ def visualize_atoms(epositions, evelocities, step, t):
 
 
     # Example: setting ticks for the X-axis
-    x_ticks = np.linspace(bounds[0][0], maxx, num=7) # Adjust 'num' for the number of ticks
+    x_ticks = np.linspace(minx, maxx, num=7) # Adjust 'num' for the number of ticks
     ax.set_xticks(x_ticks)
     ax.set_xticklabels([f"{tick:.2e}" for tick in x_ticks]) # Formatting to scientific notation
 
@@ -355,14 +358,17 @@ def visualize_wire(averaged_xdiff, step, t):
 # Displace electrons in half the first 3 x layers
 # transverse wave so in x=0 plane we displace in the x direction
 def pulse():
-    global pulserange, pulse_offset
+    global pulse_range, pulse_speed, electron_positions, electron_velocities
     yrange=gridy
     if pulsehalf:
         yrange=int(gridy/2)
-    for x in range(0,pulserange):
+    for x in range(0,pulse_range):
+        offset_add = -1*pulse_offset*np.sin(2*np.pi*x/pulse_range)
+        speed_add = -1*pulse_speed*np.sin(2*np.pi*x/pulse_range)
         for y in range(yrange):
             for z in range(gridz):
-                electron_positions[x,y,z][0] += pulse_offset
+                electron_positions[x,y,z][0] += offset_add
+                electron_velocities[x,y,z][0] += speed_add
 
 
 
@@ -410,8 +416,8 @@ def update_pv(dt):
     # Generate an array representing the X indices
     x_indices = cp.arange(gridx).reshape(gridx, 1, 1, 1)  # Reshape for broadcasting
     # Create a boolean mask where True indicates the indices to be updated
-    # Don't update the first pulserange slices or the last pulserange slices
-    update_mask = (x_indices > pulserange) & (x_indices < (gridx-pulserange))
+    # Don't update the first pulse_range slices or the last pulse_range slices
+    update_mask = (x_indices > (pulse_range*sim_pulse)) & (x_indices < (gridx-(pulse_range*sim_pulse)))
 
     # Apply updates using the mask for selective application
     electron_velocities = cp.where(update_mask, new_velocities, electron_velocities)
