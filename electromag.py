@@ -103,6 +103,8 @@ gridx = 1500   #
 gridy = 20   # 
 gridz = 20   # 
 
+pulserange=500       # how many planes will be given pulse
+
 # can do 1500 20 20
 # 3200 20 20, 2000 20 20  runs out of memory
 # can do 800 40 40
@@ -121,31 +123,29 @@ hydrogen_spacing = 3.34e-9  # 3.34 nanometers between atoms in hydrogen gas
 copper_spacing = 0.128e-9  # 3.34 nanometers between atoms in copper solid
 initial_spacing = copper_spacing*47  # 47^3 is about 100,000 and 1 free electron for every 100,000 copper atoms
 initial_radius = 5.29e-11 #  initial electron radius for hydrogen atom - got at least two times
-pulse_offset = 0.2e-9     #  how much the first few planes are offset
-pulserange=50       # 0 to 4 will be given pulse
-simxstart=pulserange-1   # we don't bother simulating the pulse electrons
-simxstop=int(gridx/2)        # want wire in front not to move or suck electrons by not being there
+pulse_offset = 1*initial_spacing    #  how much the first few planes are offset
 pulsehalf=False    # True to only pulse half the plane
 einitialmoving=False          # can have electrons initialized to moving if True and not moving if False
 
 # bounds format is  ((minx,  maxx) , (miny, maxy), (minz, maxz))
-bounds = ((-1.0*initial_spacing, (gridx+1.0)*initial_spacing), (-1.0*initial_spacing, (gridy+1.0)*initial_spacing), (-1.0*initial_spacing, (gridz+1.0)*initial_spacing))
+bounds = ((0, gridx*initial_spacing), (0, gridy*initial_spacing), (0, gridz*initial_spacing))
+# bounds = ((-1.0*initial_spacing, (gridx+1.0)*initial_spacing), (-1.0*initial_spacing, (gridy+1.0)*initial_spacing), (-1.0*initial_spacing, (gridz+1.0)*initial_spacing))
 
 # Time stepping
 num_steps =  400     # how many simulation steps
 DisplaySteps = 5000   # every so many simulation steps we call the visualize code
 WireSteps = 1     # every so many simulation steps we call the visualize code
-visualize_plane_step = int((simxstop-simxstart)/7) # think failed with int(simxstop/7) # Only show one every this many planes in data
-visualize_start= simxstart # have initial pulse electrons we don't really want to see 
-visualize_stop = simxstop # really only goes up to one less than this but since starts at zero this many
-speedup = 1       # sort of rushing the simulation time
+visualize_start= pulserange-2 # have initial pulse electrons we don't really want to see 
+visualize_stop = int(gridx/2) # really only goes up to one less than this but since starts at zero this many
+visualize_plane_step = int((visualize_stop-visualize_start)/7) # Only show one every this many planes in data
+speedup = 20       # sort of rushing the simulation time
 proprange=gridx-(2*pulserange) # not simulating either end of the wire so only middle range for signal to propagage
 dt = speedup*proprange*initial_spacing/c/num_steps  # would like total simulation time to be long enough for light wave to just cross grid 
 
 coulombs_constant = 1 / (4 * cp.pi * epsilon_0)  # Coulomb's constant 
 
 # Make string of some settings to put on output graph 
-sim_settings = f"gridx {gridx} gridy {gridy} gridz {gridz} speedup {speedup} Spacing: {initial_spacing} Steps: {num_steps}"
+sim_settings = f"gridx {gridx} gridy {gridy} gridz {gridz} speedup {speedup} Spacing: {initial_spacing:.8e} Pulse {pulse_offset:.8e} Steps: {num_steps}"
 
 
 
@@ -235,7 +235,7 @@ def visualize_atoms(epositions, evelocities, step, t):
     ax.set_ylabel('Y')
     ax.set_zlabel('Z')
 
-    maxx = simxstop*initial_spacing
+    maxx = visualize_stop*initial_spacing
     ax.set_xlim(bounds[0][0],maxx)   # set display bounds
     ax.set_ylim(bounds[1])
     ax.set_zlim(bounds[2])
@@ -341,7 +341,7 @@ def visualize_wire(averaged_xdiff, step, t):
 
     ax.set_xlabel('X index')
     ax.set_ylabel('Average X Difference')
-    ax.set_title(f'Step {step} Time: {t} sec Settings {sim_settings}')
+    ax.set_title(f'Step {step} Time: {t:.8e} sec {sim_settings}')
     ax.grid(True)
 
     # Save the figure
