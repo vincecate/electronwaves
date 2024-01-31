@@ -99,10 +99,13 @@ import multiprocessing
 
 import os
 
-gridx = 600   # 
-gridy = 50   # 
-gridz = 50   # 
+gridx = 1500   # 
+gridy = 20   # 
+gridz = 20   # 
 
+# can do 1500 20 20
+# 3200 20 20, 2000 20 20  runs out of memory
+# can do 800 40 40
 # with visualize_wire we can do 300,100,100 in about 2 minutes per step
 # With numpy 80,40,40 and visualizestop 40 is about 1 per minute
 # With cupy and dask 200,50,50 and visualizestop 100 is 10 frams per minute 
@@ -119,7 +122,7 @@ copper_spacing = 0.128e-9  # 3.34 nanometers between atoms in copper solid
 initial_spacing = copper_spacing*47  # 47^3 is about 100,000 and 1 free electron for every 100,000 copper atoms
 initial_radius = 5.29e-11 #  initial electron radius for hydrogen atom - got at least two times
 pulse_offset = 0.2e-9     #  how much the first few planes are offset
-pulserange=200       # 0 to 4 will be given pulse
+pulserange=50       # 0 to 4 will be given pulse
 simxstart=pulserange-1   # we don't bother simulating the pulse electrons
 simxstop=int(gridx/2)        # want wire in front not to move or suck electrons by not being there
 pulsehalf=False    # True to only pulse half the plane
@@ -135,11 +138,14 @@ WireSteps = 1     # every so many simulation steps we call the visualize code
 visualize_plane_step = int((simxstop-simxstart)/7) # think failed with int(simxstop/7) # Only show one every this many planes in data
 visualize_start= simxstart # have initial pulse electrons we don't really want to see 
 visualize_stop = simxstop # really only goes up to one less than this but since starts at zero this many
-speedup = 20       # sort of rushing the simulation time
+speedup = 1       # sort of rushing the simulation time
 proprange=gridx-(2*pulserange) # not simulating either end of the wire so only middle range for signal to propagage
 dt = speedup*proprange*initial_spacing/c/num_steps  # would like total simulation time to be long enough for light wave to just cross grid 
 
 coulombs_constant = 1 / (4 * cp.pi * epsilon_0)  # Coulomb's constant 
+
+# Make string of some settings to put on output graph 
+sim_settings = f"gridx {gridx} gridy {gridy} gridz {gridz} speedup {speedup} Spacing: {initial_spacing} Steps: {num_steps}"
 
 
 
@@ -335,7 +341,7 @@ def visualize_wire(averaged_xdiff, step, t):
 
     ax.set_xlabel('X index')
     ax.set_ylabel('Average X Difference')
-    ax.set_title(f'Average X Difference per X Slice\nStep {step}  Simulation Time: {t} seconds')
+    ax.set_title(f'Step {step} Time: {t} sec Settings {sim_settings}')
     ax.grid(True)
 
     # Save the figure
