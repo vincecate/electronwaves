@@ -103,7 +103,7 @@ gridx = 1500   #
 gridy = 20   # 
 gridz = 20   # 
 
-pulse_range=700       # how many planes will be given pulse
+pulse_range=750       # how many planes will be given pulse
 sim_pulse = 0.5       # what fraction of pulse we will simulate - rest is still
 
 # can do 1500 20 20
@@ -125,7 +125,7 @@ copper_spacing = 0.128e-9  # 3.34 nanometers between atoms in copper solid
 initial_spacing = copper_spacing*47  # 47^3 is about 100,000 and 1 free electron for every 100,000 copper atoms
 initial_radius = 5.29e-11 #  initial electron radius for hydrogen atom - got at least two times
 pulse_offset = 0.05*initial_spacing    #  how much the first few planes are offset
-pulse_speed = 10000000    # in meters per second -  tiny speed 
+pulse_speed = 10000    # in meters per second 
 pulsehalf=False    # True to only pulse half the plane
 einitialmoving=False          # can have electrons initialized to moving if True and not moving if False
 
