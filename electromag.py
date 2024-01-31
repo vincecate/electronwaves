@@ -137,8 +137,8 @@ bounds = ((0, gridx*initial_spacing), (0, gridy*initial_spacing), (0, gridz*init
 num_steps =  400     # how many simulation steps
 DisplaySteps = 50    # every so many simulation steps we call the visualize code
 WireSteps = 1        # every so many simulation steps we call the visualize code
-visualize_start= pulse_range-2 # have initial pulse electrons we don't really want to see 
-visualize_stop = int(gridx/2) # really only goes up to one less than this but since starts at zero this many
+visualize_start= int(pulse_range/2) # have initial pulse electrons we don't really want to see 
+visualize_stop = int(gridx-pulse_range/2) # really only goes up to one less than this but since starts at zero this many
 visualize_plane_step = int((visualize_stop-visualize_start)/7) # Only show one every this many planes in data
 speedup = 20       # sort of rushing the simulation time
 proprange=gridx-(2*pulse_range) # not simulating either end of the wire so only middle range for signal to propagage
@@ -257,11 +257,11 @@ def visualize_atoms(epositions, evelocities, step, t):
 
     y_ticks = np.linspace(bounds[1][0], bounds[1][1], num=7) # Adjust 'num' for the number of ticks
     ax.set_yticks(y_ticks)
-    ax.set_yticklabels([f"{tick:.2e}" for tick in x_ticks]) # Formatting to scientific notation
+    ax.set_yticklabels([f"{tick:.2e}" for tick in y_ticks]) # Formatting to scientific notation
 
     z_ticks = np.linspace(bounds[2][0], bounds[2][1], num=7) # Adjust 'num' for the number of ticks
     ax.set_zticks(z_ticks)
-    ax.set_zticklabels([f"{tick:.2e}" for tick in x_ticks]) # Formatting to scientific notation
+    ax.set_zticklabels([f"{tick:.2e}" for tick in z_ticks]) # Formatting to scientific notation
 
     minxd = 10  # find electron with minimum Y distance from local nucleus
     maxxd = 0   # find electron with maximum Y distance from local nucleus
