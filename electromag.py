@@ -104,7 +104,7 @@ gridy = 20   #
 gridz = 20   # 
 
 pulse_range=750       # how many planes will be given pulse
-sim_pulse = 0.5       # what fraction of pulse we will simulate - rest is still
+sim_pulse = 0.5       # what fraction of pulse we will simulate - rest is still - half toward middle from start end
 
 # can do 1500 20 20
 # 3200 20 20, 2000 20 20  runs out of memory
@@ -125,7 +125,7 @@ copper_spacing = 0.128e-9  # 3.34 nanometers between atoms in copper solid
 initial_spacing = copper_spacing*47  # 47^3 is about 100,000 and 1 free electron for every 100,000 copper atoms
 initial_radius = 5.29e-11 #  initial electron radius for hydrogen atom - got at least two times
 pulse_offset = 0.05*initial_spacing    #  how much the first few planes are offset
-pulse_speed = 10000    # in meters per second 
+pulse_speed = 50000    # in meters per second 
 pulsehalf=False    # True to only pulse half the plane
 einitialmoving=False          # can have electrons initialized to moving if True and not moving if False
 
@@ -135,13 +135,13 @@ bounds = ((0, gridx*initial_spacing), (0, gridy*initial_spacing), (0, gridz*init
 
 # Time stepping
 num_steps =  400     # how many simulation steps
-DisplaySteps = 50    # every so many simulation steps we call the visualize code
+DisplaySteps = 10    # every so many simulation steps we call the visualize code
 WireSteps = 1        # every so many simulation steps we call the visualize code
 visualize_start= int(pulse_range/2) # have initial pulse electrons we don't really want to see 
 visualize_stop = int(gridx-pulse_range/2) # really only goes up to one less than this but since starts at zero this many
 visualize_plane_step = int((visualize_stop-visualize_start)/7) # Only show one every this many planes in data
 speedup = 20       # sort of rushing the simulation time
-proprange=gridx-(2*pulse_range) # not simulating either end of the wire so only middle range for signal to propagage
+proprange=visualize_stop-visualize_start # not simulating either end of the wire so only middle range for signal to propagage
 dt = speedup*proprange*initial_spacing/c/num_steps  # would like total simulation time to be long enough for light wave to just cross grid 
 
 coulombs_constant = 1 / (4 * cp.pi * epsilon_0)  # Coulomb's constant 
@@ -303,7 +303,7 @@ def visualize_atoms(epositions, evelocities, step, t):
                     maxs=speed
         print(" ", totalxdiff / (gridy * gridz), ",", end='')
     # Set title with the current time in the simulation
-    ax.set_title(f"Step {step}  Simulation Time: {t} seconds")
+    ax.set_title(f"Step {step} Time: {t:.8e} {sim_settings}")
 
     # Use os.path.join to create the file path
     filename = os.path.join('simulation', f'step_{step}.png')
