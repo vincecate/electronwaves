@@ -3,11 +3,6 @@
 # requires
 #   pip install moviepy
 
-#!/usr/bin/python3
-#
-# requires
-#   pip install moviepy
-
 import os
 import re
 from PIL import Image
@@ -45,7 +40,7 @@ output_size = (640, 480)  # Example size, adjust as needed
 # Process and save the cropped images in the new directory
 cropped_image_filenames = []
 for filename in os.listdir(simulations_directory):
-    if filename.endswith('.png'):
+    if filename.endswith('.png') and filename.startswith('step'):
         full_path = os.path.join(simulations_directory, filename)
         cropped_img = crop_image(full_path, output_size)
 
