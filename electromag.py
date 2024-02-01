@@ -99,12 +99,11 @@ import multiprocessing
 
 import os
 
-gridx = 1500   # 
+gridx = 1500 # 
 gridy = 20   # 
 gridz = 20   # 
 
-pulse_range=750       # how many planes will be given pulse
-sim_pulse = 0.5       # what fraction of pulse we will simulate - rest is still - half toward middle from start end
+pulse_range=400       # how many planes will be given pulse - we simulate half toward middle of this at each end
 
 # can do 1500 20 20
 # 3200 20 20, 2000 20 20  runs out of memory
@@ -124,8 +123,8 @@ hydrogen_spacing = 3.34e-9  # 3.34 nanometers between atoms in hydrogen gas
 copper_spacing = 0.128e-9  # 3.34 nanometers between atoms in copper solid
 initial_spacing = copper_spacing*47  # 47^3 is about 100,000 and 1 free electron for every 100,000 copper atoms
 initial_radius = 5.29e-11 #  initial electron radius for hydrogen atom - got at least two times
-pulse_offset = 0.05*initial_spacing    #  how much the first few planes are offset
-pulse_speed = 50000    # in meters per second 
+pulse_offset =0.05*initial_spacing    #  how much the first few planes are offset
+pulse_speed = 0    # in meters per second 
 pulsehalf=False    # True to only pulse half the plane
 einitialmoving=False          # can have electrons initialized to moving if True and not moving if False
 
@@ -400,7 +399,7 @@ def calculate_forces():
 
 
 def update_pv(dt):
-    global electron_velocities, electron_positions, bounds, forces, electron_mass
+    global electron_velocities, electron_positions, bounds, forces, electron_mass, visualize_start, visualize_stop
 
     # acceleration based ono F=ma
     acceleration = forces / electron_mass
@@ -416,8 +415,9 @@ def update_pv(dt):
     # Generate an array representing the X indices
     x_indices = cp.arange(gridx).reshape(gridx, 1, 1, 1)  # Reshape for broadcasting
     # Create a boolean mask where True indicates the indices to be updated
-    # Don't update the first pulse_range slices or the last pulse_range slices
-    update_mask = (x_indices > (pulse_range*sim_pulse)) & (x_indices < (gridx-(pulse_range*sim_pulse)))
+    # We only update the same part we are visualizing 
+    update_mask = (x_indices > visualize_start) & (x_indices < visualize_stop)
+    # update_mask = x_indices > -1 
 
     # Apply updates using the mask for selective application
     electron_velocities = cp.where(update_mask, new_velocities, electron_velocities)
