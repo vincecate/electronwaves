@@ -99,7 +99,7 @@ import multiprocessing
 
 import os
 
-gridx = 3500 # 
+gridx = 3300 # 
 gridy = 10   # 
 gridz = 10   # 
 
