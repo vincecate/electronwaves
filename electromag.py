@@ -127,7 +127,7 @@ hydrogen_spacing = 3.34e-9  # 3.34 nanometers between atoms in hydrogen gas
 copper_spacing = 0.128e-9  # 3.34 nanometers between atoms in copper solid
 initial_spacing = copper_spacing*47  # 47^3 is about 100,000 and 1 free electron for every 100,000 copper atoms
 initial_radius = 5.29e-11 #  initial electron radius for hydrogen atom - got at least two times
-pulse_offset =100*initial_spacing    #  how much the first few planes are offset
+pulse_offset =100.5*initial_spacing    #  how much the first few planes are offset
 pulse_speed = 0    # in meters per second 
 pulse_sinwave = False  # True if pulse should be sin wave
 pulsehalf=False    # True to only pulse half the plane
@@ -339,7 +339,7 @@ def calculate_wire(epositions):
     # Calculate the average difference for each x slice
     averaged_xdiff = totalxdiff / (gridy * gridz)
 
-    return(averaged_xdiff)
+    return(averaged_xdiff.get())    # make Numpy for visualization that runs on CPU
 
 def visualize_wire(averaged_xdiff, step, t):
     # Plotting
@@ -463,8 +463,8 @@ def main():
     futures = []
 
     print("Doing first visualization")
-    copypositions=electron_positions.copy()
-    copyvelocities=electron_velocities.copy()
+    copypositions=electron_positions.get()   # get makes Numpy copy so runs on CPU in Dask
+    copyvelocities=electron_velocities.get() # get makes Numpy copy so runs on CPU in Dask
     future = client.submit(visualize_atoms, copypositions, copyvelocities, -1, 0.0)
     futures.append(future)
     del copypositions, copyvelocities     # we don't need copy here any more - telling garbage collector
@@ -481,8 +481,8 @@ def main():
             del WireStatus
         if step % DisplaySteps == 0:
             print("Display", step)
-            copypositions=electron_positions.copy()
-            copyvelocities=electron_velocities.copy()
+            copypositions=electron_positions.get() # get makes Numpy copy so runs on CPU in Dask
+            copyvelocities=electron_velocities.get() # get makes Numpy copy so runs on CPU in Dask
             future = client.submit(visualize_atoms, copypositions, copyvelocities, step, t)
             futures.append(future)
             del copypositions, copyvelocities     # we don't need copy here any more - telling garbage collector
