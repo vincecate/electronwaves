@@ -99,7 +99,7 @@ import multiprocessing
 
 import os
 
-gridx = 3300 # 
+gridx = 3500 # 
 gridy = 10   # 
 gridz = 10   # 
 
@@ -144,7 +144,7 @@ WireSteps = 1        # every so many simulation steps we call the visualize code
 visualize_start= int(pulse_range/2) # have initial pulse electrons we don't really want to see 
 visualize_stop = int(gridx-pulse_range/2) # really only goes up to one less than this but since starts at zero this many
 visualize_plane_step = int((visualize_stop-visualize_start)/7) # Only show one every this many planes in data
-speedup = 20       # sort of rushing the simulation time
+speedup = 1       # sort of rushing the simulation time
 proprange=visualize_stop-visualize_start # not simulating either end of the wire so only middle range for signal to propagage
 dt = speedup*proprange*initial_spacing/c/num_steps  # would like total simulation time to be long enough for light wave to just cross grid 
 
@@ -402,7 +402,7 @@ def calculate_forces():
     print("Max force magnitude:", cp.max(cp.linalg.norm(normforces, axis=1)))
 
     # Sum forces from all other electrons for each electron
-    return(cp.sum(normforces, axis=1))
+    forces=cp.sum(normforces, axis=1)
 
 
 
@@ -488,7 +488,7 @@ def main():
             del copypositions, copyvelocities     # we don't need copy here any more - telling garbage collector
 
         print("Updating force", step)
-        forces=calculate_forces()
+        calculate_forces()
 
         print("Updating position and velocity", t)
         update_pv(dt)
