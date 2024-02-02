@@ -99,19 +99,23 @@ import multiprocessing
 
 import os
 
-gridx = 1500 # 
-gridy = 20   # 
-gridz = 20   # 
+gridx = 3300 # 
+gridy = 10   # 
+gridz = 10   # 
 
-pulse_range=400       # how many planes will be given pulse - we simulate half toward middle of this at each end
+pulse_range=1000       # how many planes will be given pulse - we simulate half toward middle of this at each end
 
-# can do 1500 20 20
-# 3200 20 20, 2000 20 20  runs out of memory
-# can do 800 40 40
-# with visualize_wire we can do 300,100,100 in about 2 minutes per step
-# With numpy 80,40,40 and visualizestop 40 is about 1 per minute
-# With cupy and dask 200,50,50 and visualizestop 100 is 10 frams per minute 
-# With cupy and dask 400, 50, 50 took 3 minutes per frame - ug another running at same time
+#     gridx gridy gridz  = total electrons
+# Enough GPU memory
+#        1500 20 20   = 600000 
+#        3300 10 10   = 330000
+#        800 40 40    = 1280000
+#        400 50 50    = 1000000
+#        300 100 100  = 3000000
+# Not enough GPU memory
+#       3500 10 10   = 350000
+#       3200 20 20   = 1280000
+#       2000 20 20   = 800000
 
 # Initial electron speed 2,178,278 m/s
 # electron_speed= 2178278  
@@ -123,10 +127,11 @@ hydrogen_spacing = 3.34e-9  # 3.34 nanometers between atoms in hydrogen gas
 copper_spacing = 0.128e-9  # 3.34 nanometers between atoms in copper solid
 initial_spacing = copper_spacing*47  # 47^3 is about 100,000 and 1 free electron for every 100,000 copper atoms
 initial_radius = 5.29e-11 #  initial electron radius for hydrogen atom - got at least two times
-pulse_offset =0.05*initial_spacing    #  how much the first few planes are offset
+pulse_offset =100*initial_spacing    #  how much the first few planes are offset
 pulse_speed = 0    # in meters per second 
+pulse_sinwave = False  # True if pulse should be sin wave
 pulsehalf=False    # True to only pulse half the plane
-einitialmoving=False          # can have electrons initialized to moving if True and not moving if False
+initialize_orbits=False          # can have electrons initialized to moving if True and not moving if False
 
 # bounds format is  ((minx,  maxx) , (miny, maxy), (minz, maxz))
 bounds = ((0, gridx*initial_spacing), (0, gridy*initial_spacing), (0, gridz*initial_spacing))
@@ -183,7 +188,7 @@ def checkgpu():
 # Initialize the 3 of the main arrays (forces ok at zeros)
 def initialize_atoms():
 
-    global initial_radius, electron_velocities, electron_positions, nucleus_positions, gridx, gridy, gridz, initial_spacing, einitialmoving, electron_speed
+    global initial_radius, electron_velocities, electron_positions, nucleus_positions, gridx, gridy, gridz, initial_spacing, initialize_orbits, electron_speed
 
     # Initialize nucleus positions
     x, y, z = cp.indices((gridx, gridy, gridz))
@@ -200,7 +205,7 @@ def initialize_atoms():
 
     electron_positions = cp.stack((ex, ey, ez), axis=-1)
 
-    if einitialmoving:
+    if initialize_orbits:
         # Random vectors
         random_vectors = cp.random.random((gridx, gridy, gridz, 3))
 
@@ -362,8 +367,12 @@ def pulse():
     if pulsehalf:
         yrange=int(gridy/2)
     for x in range(0,pulse_range):
-        offset_add = -1*pulse_offset*np.sin(2*np.pi*x/pulse_range)
-        speed_add = -1*pulse_speed*np.sin(2*np.pi*x/pulse_range)
+        if pulse_sinwave:
+            offset_add = -1*pulse_offset*np.sin(2*np.pi*x/pulse_range)
+            speed_add = -1*pulse_speed*np.sin(2*np.pi*x/pulse_range)
+        else:
+            offset_add = pulse_offset
+            speed_add = pulse_speed
         for y in range(yrange):
             for z in range(gridz):
                 electron_positions[x,y,z][0] += offset_add
@@ -483,6 +492,7 @@ def main():
 
         print("Updating position and velocity", t)
         update_pv(dt)
+        cp.cuda.Stream.null.synchronize()         # free memory on the GPU
 
     copypositions=electron_positions.copy()
     copyvelocities=electron_velocities.copy()
