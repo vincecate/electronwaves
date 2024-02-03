@@ -103,7 +103,7 @@ gridx = 1500 #
 gridy = 20   # 
 gridz = 20   # 
 
-pulse_range=700       # how many planes will be given pulse - we simulate half toward middle of this at each end
+pulse_width=400       # how many planes will be given pulse - we simulate half toward middle of this at each end
 
 #     gridx gridy gridz  = total electrons
 # Enough GPU memory
@@ -127,7 +127,8 @@ hydrogen_spacing = 3.34e-9  # 3.34 nanometers between atoms in hydrogen gas
 copper_spacing = 0.128e-9  # 3.34 nanometers between atoms in copper solid
 initial_spacing = copper_spacing*47  # 47^3 is about 100,000 and 1 free electron for every 100,000 copper atoms
 initial_radius = 5.29e-11 #  initial electron radius for hydrogen atom - got at least two times
-pulse_offset =500.5*initial_spacing    #  how much the first few planes are offset
+pulse_units = 200.5
+pulse_offset =pulse_units*initial_spacing    #  how much the first few planes are offset
 pulse_speed = 0    # in meters per second 
 pulse_sinwave = False  # True if pulse should be sin wave
 pulsehalf=False    # True to only pulse half the plane
@@ -138,24 +139,24 @@ bounds = ((0, gridx*initial_spacing), (0, gridy*initial_spacing), (0, gridz*init
 # bounds = ((-1.0*initial_spacing, (gridx+1.0)*initial_spacing), (-1.0*initial_spacing, (gridy+1.0)*initial_spacing), (-1.0*initial_spacing, (gridz+1.0)*initial_spacing))
 
 # Time stepping
-num_steps =  400     # how many simulation steps
+num_steps =  4000     # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
 DisplaySteps = 10    # every so many simulation steps we call the visualize code
 WireSteps = 1        # every so many simulation steps we call the visualize code
-visualize_start= int(pulse_range/2) # have initial pulse electrons we don't really want to see 
-visualize_stop = int(gridx-pulse_range/2) # really only goes up to one less than this but since starts at zero this many
+visualize_start= int(pulse_width/3) # have initial pulse electrons we don't really want to see 
+visualize_stop = int(gridx-pulse_width/3) # really only goes up to one less than this but since starts at zero this many
 visualize_plane_step = int((visualize_stop-visualize_start)/7) # Only show one every this many planes in data
 wire_start = 0        # can look at a smaller section 
 wire_stop = gridx
-max_grid_distance=50      # maximum up or down the X direction that we calculate forces for electrons
+max_neighbor_grids=50      # maximum up or down the X direction that we calculate forces for electrons
 
-speedup = 5       # sort of rushing the simulation time
+speedup = 300       # sort of rushing the simulation time
 proprange=visualize_stop-visualize_start # not simulating either end of the wire so only middle range for signal to propagage
 dt = speedup*proprange*initial_spacing/c/num_steps  # would like total simulation time to be long enough for light wave to just cross grid 
 
 coulombs_constant = 1 / (4 * cp.pi * epsilon_0)  # Coulomb's constant 
 
 # Make string of some settings to put on output graph 
-sim_settings = f"gridx {gridx} gridy {gridy} gridz {gridz} speedup {speedup} Spacing: {initial_spacing:.8e} \n Pulse Width {pulse_width} Speed {pulse_speed:.8e} Offset {pulse_offset:.8e} Steps: {num_steps}"
+sim_settings = f"gridx {gridx} gridy {gridy} gridz {gridz} speedup {speedup} Spacing: {initial_spacing:.8e} \n Pulse Width {pulse_width} Speed {pulse_speed:.8e} Units {pulse_units} Steps: {num_steps}"
 
 def GPUMem():
     # Get total and free memory in bytes
@@ -356,6 +357,25 @@ def calculate_wire(epositions):
 
     return(averaged_xdiff.get())    # make Numpy for visualization that runs on CPU
 
+
+def calculate_histogram(epositions):
+    global initial_spacing
+    
+    # Get x positions 
+    x_positions = epositions[:,:,:,0].flatten()
+    
+    # Convert positions to segment indices
+    segment_indices = cp.floor(x_positions / initial_spacing).astype(cp.int32)
+
+    # Calculate histogram
+    histogram, _ = cp.histogram(segment_indices, bins=cp.arange(-0.5, gridx + 0.5, 1))
+
+    # Convert the histogram to a NumPy array for visualization
+    histogram = histogram.get()
+
+    return histogram
+
+
 def visualize_wire(averaged_xdiff, step, t):
     # Plotting
     fig, ax = plt.subplots(figsize=(12.8, 9.6))
@@ -379,14 +399,14 @@ def visualize_wire(averaged_xdiff, step, t):
 # Displace electrons in half the first 3 x layers
 # transverse wave so in x=0 plane we displace in the x direction
 def pulse():
-    global pulse_range, pulse_speed, electron_positions, electron_velocities
+    global pulse_width, pulse_speed, electron_positions, electron_velocities
     yrange=gridy
     if pulsehalf:
         yrange=int(gridy/2)
-    for x in range(0,pulse_range):
+    for x in range(0,pulse_width):
         if pulse_sinwave:
-            offset_add = -1*pulse_offset*np.sin(2*np.pi*x/pulse_range)
-            speed_add = -1*pulse_speed*np.sin(2*np.pi*x/pulse_range)
+            offset_add = -1*pulse_offset*np.sin(2*np.pi*x/pulse_width)
+            speed_add = -1*pulse_speed*np.sin(2*np.pi*x/pulse_width)
         else:
             offset_add = pulse_offset
             speed_add = pulse_speed
@@ -426,10 +446,10 @@ def calculate_forces_all():
 #  The gridy and gridz are small like 10, 20, or 30 representing the width of the wire
 #  The initial position of the electrons is calculated from their grid positon in the electron_positions array.
 #  The simulation is assumed to be a short enough time that electrons will not have moved far.
-#  If we calculate forces for max_grid_distance up/down the X dimension it will be accurate enough.
-#  max_grid_distance is a global but will start with 50
+#  If we calculate forces for max_neighbor_grids up/down the X dimension it will be accurate enough.
+#  max_neighbor_grids is a global but will start with 50
 def calculate_forces_nearby():
-    global electron_positions, forces, gridx, gridy, gridz, max_grid_distance, coulombs_constant, electron_charge
+    global electron_positions, forces, gridx, gridy, gridz, max_neighbor_grids, coulombs_constant, electron_charge
 
     # Reset forces to zero before calculation
     forces.fill(0)
@@ -438,9 +458,9 @@ def calculate_forces_nearby():
     for x in range(gridx):
         for y in range(gridy):
             for z in range(gridz):
-                # Calculate range of x indices to consider based on max_grid_distance
-                x_start = max(0, x - max_grid_distance)
-                x_end = min(gridx, x + max_grid_distance + 1)  # +1 because range end is exclusive
+                # Calculate range of x indices to consider based on max_neighbor_grids
+                x_start = max(0, x - max_neighbor_grids)
+                x_end = min(gridx, x + max_neighbor_grids + 1)  # +1 because range end is exclusive
                 
                 # Accumulator for forces on the current electron
                 force_on_current = cp.zeros(3)
@@ -587,7 +607,8 @@ def main():
         print("In main", step)
         GPUMem()
         if step % WireSteps == 0:
-            WireStatus=calculate_wire(electron_positions)
+            # WireStatus=calculate_wire(electron_positions)
+            WireStatus=calculate_histogram(electron_positions)
             future = client.submit(visualize_wire, WireStatus, step, t)
             futures.append(future)
         if step % DisplaySteps == 0:
