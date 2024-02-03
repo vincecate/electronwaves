@@ -99,11 +99,11 @@ import multiprocessing
 
 import os
 
-gridx = 3300 # 
-gridy = 10   # 
-gridz = 10   # 
+gridx = 1500 # 
+gridy = 20   # 
+gridz = 20   # 
 
-pulse_range=1000       # how many planes will be given pulse - we simulate half toward middle of this at each end
+pulse_range=700       # how many planes will be given pulse - we simulate half toward middle of this at each end
 
 #     gridx gridy gridz  = total electrons
 # Enough GPU memory
@@ -144,18 +144,18 @@ WireSteps = 1        # every so many simulation steps we call the visualize code
 visualize_start= int(pulse_range/2) # have initial pulse electrons we don't really want to see 
 visualize_stop = int(gridx-pulse_range/2) # really only goes up to one less than this but since starts at zero this many
 visualize_plane_step = int((visualize_stop-visualize_start)/7) # Only show one every this many planes in data
-wire_start = pulse_range+1
-wire_stop = gridx-pulse_range
-max_distance=50      # maximum distance we really calculate forces for - ignore further electrons
+wire_start = 0        # can look at a smaller section 
+wire_stop = gridx
+max_grid_distance=50      # maximum up or down the X direction that we calculate forces for electrons
 
-speedup = 1       # sort of rushing the simulation time
+speedup = 5       # sort of rushing the simulation time
 proprange=visualize_stop-visualize_start # not simulating either end of the wire so only middle range for signal to propagage
 dt = speedup*proprange*initial_spacing/c/num_steps  # would like total simulation time to be long enough for light wave to just cross grid 
 
 coulombs_constant = 1 / (4 * cp.pi * epsilon_0)  # Coulomb's constant 
 
 # Make string of some settings to put on output graph 
-sim_settings = f"gridx {gridx} gridy {gridy} gridz {gridz} speedup {speedup} Spacing: {initial_spacing:.8e} PulseS {pulse_speed:.8e} PulseO {pulse_offset:.8e} Steps: {num_steps}"
+sim_settings = f"gridx {gridx} gridy {gridy} gridz {gridz} speedup {speedup} Spacing: {initial_spacing:.8e} \n Pulse Width {pulse_width} Speed {pulse_speed:.8e} Offset {pulse_offset:.8e} Steps: {num_steps}"
 
 def GPUMem():
     # Get total and free memory in bytes
@@ -308,6 +308,7 @@ def visualize_atoms(epositions, evelocities, step, t):
                 distance = abs(xdiff)   # absolute value of distance
                 # Normalize the distance and map to color - 
                 # adding 1.5x should get us to 0.5 to 2.5 when still circular and 0 to 3 if bit wild
+                # XXXX using abs above and below means that yellow does not always mean to the right.  Hum
                 normalized_distance =  abs((distance - 0.5*initial_radius)/initial_radius)
                 color = plt.cm.viridis(normalized_distance)
                 ax.scatter(*electron_pos, color=color,  s=10)
@@ -420,39 +421,51 @@ def calculate_forces_all():
     forces=cp.sum(normforces, axis=1)
 
 
-
+#  We are simulating electrons in a wire
+#  The grix is large like 3000 and the length of the wire
+#  The gridy and gridz are small like 10, 20, or 30 representing the width of the wire
+#  The initial position of the electrons is calculated from their grid positon in the electron_positions array.
+#  The simulation is assumed to be a short enough time that electrons will not have moved far.
+#  If we calculate forces for max_grid_distance up/down the X dimension it will be accurate enough.
+#  max_grid_distance is a global but will start with 50
 def calculate_forces_nearby():
-    global electron_positions, forces, gridx, gridy, gridz, max_distance
-    forces.fill(0)  # Reset forces array to zero
+    global electron_positions, forces, gridx, gridy, gridz, max_grid_distance, coulombs_constant, electron_charge
 
-    # Generate a grid of indices for electrons
-    x, y, z = cp.meshgrid(cp.arange(gridx), cp.arange(gridy), cp.arange(gridz), indexing='ij')
+    # Reset forces to zero before calculation
+    forces.fill(0)
 
-    # Flatten the positions and indices for easier computation
-    flat_positions = electron_positions.reshape(-1, 3)
-    flat_indices = cp.stack((x, y, z), axis=-1).reshape(-1, 3)
-
-    # Compute distances between all pairs of electrons
-    # Note: This might be memory-intensive and can be optimized further for very large grids
-    delta_r = flat_positions[:, None, :] - flat_positions[None, :, :]
-    distances = cp.sqrt(cp.sum(delta_r**2, axis=2))
-
-    # Apply max_distance constraint to consider only nearby electrons
-    within_max_distance = distances < (max_distance * initial_spacing)
-    distances[~within_max_distance] = cp.inf  # Ignore electrons beyond max_distance by setting distance to infinity
-
-    # Exclude self interactions
-    cp.fill_diagonal(distances, cp.inf)
-
-    # Compute forces using Coulomb's law, excluding self interactions
-    force_magnitudes = coulombs_constant * (electron_charge**2) / distances**2
-    force_directions = delta_r / distances[..., None]
-
-    # Sum the forces from all other electrons for each electron
-    total_forces = cp.sum(force_magnitudes[..., None] * force_directions, axis=1)
-
-    # Reshape the forces back to the original grid shape
-    forces = total_forces.reshape(gridx, gridy, gridz, 3)
+    # Loop through all electrons by their grid indices
+    for x in range(gridx):
+        for y in range(gridy):
+            for z in range(gridz):
+                # Calculate range of x indices to consider based on max_grid_distance
+                x_start = max(0, x - max_grid_distance)
+                x_end = min(gridx, x + max_grid_distance + 1)  # +1 because range end is exclusive
+                
+                # Accumulator for forces on the current electron
+                force_on_current = cp.zeros(3)
+                
+                # Loop through nearby electrons in the x direction and all y, z
+                for xi in range(x_start, x_end):
+                    for yi in range(gridy):
+                        for zi in range(gridz):
+                            if xi == x and yi == y and zi == z:
+                                continue  # Skip self-interaction
+                            
+                            # Compute distance vector between current electron and others
+                            delta_r = electron_positions[x, y, z] - electron_positions[xi, yi, zi]
+                            distance = cp.linalg.norm(delta_r)
+                            if distance == 0:  # Prevent division by zero
+                                continue
+                            
+                            # Calculate force magnitude using Coulomb's law
+                            force_magnitude = coulombs_constant * (electron_charge ** 2) / (distance ** 2)
+                            
+                            # Calculate force vector and add it to the accumulator
+                            force_on_current += (delta_r / distance) * force_magnitude
+                
+                # Update the forces array with the calculated force
+                forces[x, y, z] = force_on_current
 
 
 
@@ -584,8 +597,12 @@ def main():
             future = client.submit(visualize_atoms, copypositions, copyvelocities, step, t)
             futures.append(future)
 
-        print("Updating force chunked", step)
-        calculate_forces_chunked()
+        #print("Updating force chunked", step)
+        #calculate_forces_chunked()
+        #print("Updating force nearby", step)
+        #calculate_forces_nearby()
+        print("Updating force all", step)
+        calculate_forces_all()
         GPUMem()
 
         print("Updating position and velocity", t)
