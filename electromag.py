@@ -127,7 +127,7 @@ hydrogen_spacing = 3.34e-9  # 3.34 nanometers between atoms in hydrogen gas
 copper_spacing = 0.128e-9  # 3.34 nanometers between atoms in copper solid
 initial_spacing = copper_spacing*47  # 47^3 is about 100,000 and 1 free electron for every 100,000 copper atoms
 initial_radius = 5.29e-11 #  initial electron radius for hydrogen atom - got at least two times
-pulse_offset =100.5*initial_spacing    #  how much the first few planes are offset
+pulse_offset =500.5*initial_spacing    #  how much the first few planes are offset
 pulse_speed = 0    # in meters per second 
 pulse_sinwave = False  # True if pulse should be sin wave
 pulsehalf=False    # True to only pulse half the plane
@@ -144,6 +144,10 @@ WireSteps = 1        # every so many simulation steps we call the visualize code
 visualize_start= int(pulse_range/2) # have initial pulse electrons we don't really want to see 
 visualize_stop = int(gridx-pulse_range/2) # really only goes up to one less than this but since starts at zero this many
 visualize_plane_step = int((visualize_stop-visualize_start)/7) # Only show one every this many planes in data
+wire_start = pulse_range+1
+wire_stop = gridx-pulse_range
+max_distance=50      # maximum distance we really calculate forces for - ignore further electrons
+
 speedup = 1       # sort of rushing the simulation time
 proprange=visualize_stop-visualize_start # not simulating either end of the wire so only middle range for signal to propagage
 dt = speedup*proprange*initial_spacing/c/num_steps  # would like total simulation time to be long enough for light wave to just cross grid 
@@ -153,12 +157,22 @@ coulombs_constant = 1 / (4 * cp.pi * epsilon_0)  # Coulomb's constant
 # Make string of some settings to put on output graph 
 sim_settings = f"gridx {gridx} gridy {gridy} gridz {gridz} speedup {speedup} Spacing: {initial_spacing:.8e} PulseS {pulse_speed:.8e} PulseO {pulse_offset:.8e} Steps: {num_steps}"
 
+def GPUMem():
+    # Get total and free memory in bytes
+    free_mem, total_mem = cp.cuda.runtime.memGetInfo()
 
+    print(f"Total GPU Memory: {total_mem / 1e9} GB")
+    print(f"Free GPU Memory: {free_mem / 1e9} GB")
+
+GPUMem()
 
 nucleus_positions = cp.zeros((gridx, gridy, gridz, 3))
 electron_positions = cp.zeros((gridx, gridy, gridz, 3))
 electron_velocities = cp.zeros((gridx, gridy, gridz, 3))
 forces = cp.zeros((gridx, gridy, gridz, 3))
+
+GPUMem()
+
 
 # Global 3D arrays with 3 unit arrays as data
 # nucleus_positions 
@@ -166,6 +180,7 @@ forces = cp.zeros((gridx, gridy, gridz, 3))
 # electron_velocities 
 # forces
 # Further initialization and computations go here
+
 
 
 # Check if 'cp' is CuPy and CUDA is available
@@ -318,7 +333,6 @@ def visualize_atoms(epositions, evelocities, step, t):
     print("mins  =",mins)
     print("maxs  =",maxs)
 
-    del epositions, evelocities     # we don't need copy here any more - telling garbage collector
     plt.close(fig)  # Close the figure to free memory
 
 
@@ -344,7 +358,9 @@ def calculate_wire(epositions):
 def visualize_wire(averaged_xdiff, step, t):
     # Plotting
     fig, ax = plt.subplots(figsize=(12.8, 9.6))
-    ax.plot(cp.asnumpy(averaged_xdiff), marker='o')  # Convert to NumPy array for plotting
+
+    #  Want to plot only betweew wire_start and wire_stop
+    ax.plot(range(wire_start, wire_stop), averaged_xdiff[wire_start:wire_stop], marker='o')
 
     ax.set_xlabel('X index')
     ax.set_ylabel('Average X Difference')
@@ -381,8 +397,7 @@ def pulse():
 
 
 
-
-def calculate_forces():
+def calculate_forces_all():
     global electron_positions, forces, coulombs_constant, electron_charge
 
     # Calculate pairwise differences in position (broadcasting)
@@ -403,6 +418,89 @@ def calculate_forces():
 
     # Sum forces from all other electrons for each electron
     forces=cp.sum(normforces, axis=1)
+
+
+
+def calculate_forces_nearby():
+    global electron_positions, forces, gridx, gridy, gridz, max_distance
+    forces.fill(0)  # Reset forces array to zero
+
+    # Generate a grid of indices for electrons
+    x, y, z = cp.meshgrid(cp.arange(gridx), cp.arange(gridy), cp.arange(gridz), indexing='ij')
+
+    # Flatten the positions and indices for easier computation
+    flat_positions = electron_positions.reshape(-1, 3)
+    flat_indices = cp.stack((x, y, z), axis=-1).reshape(-1, 3)
+
+    # Compute distances between all pairs of electrons
+    # Note: This might be memory-intensive and can be optimized further for very large grids
+    delta_r = flat_positions[:, None, :] - flat_positions[None, :, :]
+    distances = cp.sqrt(cp.sum(delta_r**2, axis=2))
+
+    # Apply max_distance constraint to consider only nearby electrons
+    within_max_distance = distances < (max_distance * initial_spacing)
+    distances[~within_max_distance] = cp.inf  # Ignore electrons beyond max_distance by setting distance to infinity
+
+    # Exclude self interactions
+    cp.fill_diagonal(distances, cp.inf)
+
+    # Compute forces using Coulomb's law, excluding self interactions
+    force_magnitudes = coulombs_constant * (electron_charge**2) / distances**2
+    force_directions = delta_r / distances[..., None]
+
+    # Sum the forces from all other electrons for each electron
+    total_forces = cp.sum(force_magnitudes[..., None] * force_directions, axis=1)
+
+    # Reshape the forces back to the original grid shape
+    forces = total_forces.reshape(gridx, gridy, gridz, 3)
+
+
+
+def calculate_forces_chunked():
+    global electron_positions, forces, gridx, gridy, gridz, max_distance
+    forces.fill(0)  # Reset forces to zero
+
+    # Number of electrons
+    num_electrons = gridx * gridy * gridz
+
+    # Calculate chunk size based on available memory and desired batch size
+    # Adjust `batch_size` based on your GPU's memory capacity
+    batch_size = 5000  # Example batch size, adjust based on your system's capacity
+
+    for start_idx in range(0, num_electrons, batch_size):
+        end_idx = min(start_idx + batch_size, num_electrons)
+
+        # Extract batch positions
+        batch_positions = electron_positions.reshape(-1, 3)[start_idx:end_idx]
+
+        # Compute distances and forces between the batch and all electrons
+        for other_start in range(0, num_electrons, batch_size):
+            other_end = min(other_start + batch_size, num_electrons)
+
+            # Extract positions of other electrons to compare with the current batch
+            other_positions = electron_positions.reshape(-1, 3)[other_start:other_end]
+
+            # Calculate pairwise differences and distances
+            delta_r = batch_positions[:, None, :] - other_positions[None, :, :]
+            distances = cp.sqrt(cp.sum(delta_r**2, axis=2))
+
+            # Apply max distance constraint
+            mask = (distances < max_distance * initial_spacing) & (distances > 0)  # Exclude self-interactions
+            distances[~mask] = cp.inf
+
+            # Calculate forces
+            force_magnitude = coulombs_constant * (electron_charge**2) / distances**2
+            force_direction = delta_r / distances[..., None]
+
+            # Sum forces and update the forces array
+            total_forces = cp.sum(force_magnitude[..., None] * force_direction, axis=1)
+
+            # Update forces for the current batch
+            forces.reshape(-1, 3)[start_idx:end_idx] += total_forces
+
+    # Reshape forces back to the original shape
+    forces = forces.reshape(gridx, gridy, gridz, 3)
+
 
 
 
@@ -453,6 +551,7 @@ def main():
 
     print("In main")
     checkgpu()
+    GPUMem()
     initialize_atoms()
     os.makedirs('simulation', exist_ok=True) # Ensure the simulation directory exists
 
@@ -467,38 +566,36 @@ def main():
     copyvelocities=electron_velocities.get() # get makes Numpy copy so runs on CPU in Dask
     future = client.submit(visualize_atoms, copypositions, copyvelocities, -1, 0.0)
     futures.append(future)
-    del copypositions, copyvelocities     # we don't need copy here any more - telling garbage collector
     print("Doing pulse")
     pulse()
     # main simulation loop
     for step in range(num_steps):
         t = step * dt
         print("In main", step)
+        GPUMem()
         if step % WireSteps == 0:
             WireStatus=calculate_wire(electron_positions)
             future = client.submit(visualize_wire, WireStatus, step, t)
             futures.append(future)
-            del WireStatus
         if step % DisplaySteps == 0:
             print("Display", step)
             copypositions=electron_positions.get() # get makes Numpy copy so runs on CPU in Dask
             copyvelocities=electron_velocities.get() # get makes Numpy copy so runs on CPU in Dask
             future = client.submit(visualize_atoms, copypositions, copyvelocities, step, t)
             futures.append(future)
-            del copypositions, copyvelocities     # we don't need copy here any more - telling garbage collector
 
-        print("Updating force", step)
-        calculate_forces()
+        print("Updating force chunked", step)
+        calculate_forces_chunked()
+        GPUMem()
 
         print("Updating position and velocity", t)
         update_pv(dt)
         cp.cuda.Stream.null.synchronize()         # free memory on the GPU
 
-    copypositions=electron_positions.copy()
-    copyvelocities=electron_velocities.copy()
+    copypositions=electron_positions.get()
+    copyvelocities=electron_velocities.get()
     future = client.submit(visualize_atoms, copypositions, copyvelocities, step, t) # If we end at 200 we need last output
     futures.append(future)
-    del copypositions, copyvelocities     # we don't need copy here any more - telling garbage collector
     wait(futures)
 
 
