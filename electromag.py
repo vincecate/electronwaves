@@ -111,47 +111,50 @@ else:
 # $1 argument gets saved to simnum so can do batch of several simulations from script
 # have a set to try to get projection to speed of light in full size plane wave
 
-# These should all have the same pulse width to be fair -  
+# Making wider wires have deeper pulses so scaling is 3D to give better estimate for real wire extrapolation
 if simnum==1:            # .13% of light speed on Feb 2 changed units to 20.5 so all the same 
-    gridx = 1500         # 
+    gridx = 200          # 
+    gridy = 10           # 
+    gridz = 10           # 
+    speedup = 300        # sort of rushing the simulation time
+    pulse_width=20      # how many planes will be given pulse - we simulate half toward middle of this at each end
+    num_steps =  2500    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
+
+if simnum==2:            # .13% of light speed on Feb 2 changed units to 20.5 so all the same 
+    gridx = 1500         #  can do 1500
     gridy = 20           # 
     gridz = 20           # 
     speedup = 300        # sort of rushing the simulation time
-    pulse_width=100      # how many planes will be given pulse - we simulate half toward middle of this at each end
+    pulse_width=40      # how many planes will be given pulse - we simulate half toward middle of this at each end
     num_steps =  2500    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
-    DisplaySteps = 50    # every so many simulation steps we call the visualize code
-    WireSteps = 1        # every so many simulation steps we call the visualize code
 
-if simnum==2:            # Ug came out slower when was predicting much faster - might need to run longer to get real speed
+if simnum==3:            # Ug came out slower when was predicting much faster - might need to run longer to get real speed
     gridx = 800          # 
     gridy = 40           # 
     gridz = 40           # 
     speedup = 300        # sort of rushing the simulation time
-    pulse_width=100      # how many planes will be given pulse - we simulate half toward middle of this at each end
+    pulse_width=80      # how many planes will be given pulse - we simulate half toward middle of this at each end
     num_steps =  2500    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
-    DisplaySteps = 5000  # every so many simulation steps we call the visualize code
-    WireSteps = 1        # every so many simulation steps we call the visualize code
 
 
-if simnum==3:            #
-    gridx = 340          # 
+if simnum==4:            #
+    gridx = 400          # 
     gridy = 80           # 
     gridz = 80           # 
     speedup = 300        # sort of rushing the simulation time
-    pulse_width=100      # how many planes will be given pulse - we simulate half toward middle of this at each end
+    pulse_width=160      # how many planes will be given pulse - we simulate half toward middle of this at each end
     num_steps =  2500    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
-    DisplaySteps = 5000  # every so many simulation steps we call the visualize code
-    WireSteps = 1        # every so many simulation steps we call the visualize code
 
-if simnum==4:            #
+if simnum==5:            #
     gridx = 160          # 
     gridy = 160          # 
     gridz = 160          # 
     speedup = 300        # sort of rushing the simulation time
-    pulse_width=100      # how many planes will be given pulse - we simulate half toward middle of this at each end
+    pulse_width=160      # Really want twice this but may be able to learn something with this.  
     num_steps =  2500    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
-    DisplaySteps = 5000  # every so many simulation steps we call the visualize code
-    WireSteps = 1        # every so many simulation steps we call the visualize code
+
+DisplaySteps = 5000  # every so many simulation steps we call the visualize code
+WireSteps = 1        # every so many simulation steps we call the visualize code
 
 
 #     gridx gridy gridz  = total electrons
@@ -209,7 +212,7 @@ dt = speedup*proprange*initial_spacing/c/num_steps  # would like total simulatio
 coulombs_constant = 1 / (4 * cp.pi * epsilon_0)  # Coulomb's constant 
 
 # Make string of some settings to put on output graph 
-sim_settings = f"gridx {gridx} gridy {gridy} gridz {gridz} speedup {speedup} Spacing: {initial_spacing:.8e} \n Pulse Width {pulse_width} Speed {pulse_speed:.8e} Steps: {num_steps}"
+sim_settings = f"simnum {simnum} gridx {gridx} gridy {gridy} gridz {gridz} speedup {speedup} Spacing: {initial_spacing:.8e} \n Pulse Width {pulse_width} Speed {pulse_speed:.8e} Steps: {num_steps}"
 
 def GPUMem():
     # Get total and free memory in bytes
