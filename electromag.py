@@ -99,11 +99,30 @@ import multiprocessing
 
 import os
 
-gridx = 1500 # 
-gridy = 20   # 
-gridz = 20   # 
+simnum=2       # going to have a set to try to get projection to speed of light in full size plane wave
 
-pulse_width=400       # how many planes will be given pulse - we simulate half toward middle of this at each end
+if simnum==1:            # .13% of light speed on Feb 2  
+    gridx = 1500         # 
+    gridy = 20           # 
+    gridz = 20           # 
+    speedup = 300        # sort of rushing the simulation time
+    pulse_width=600      # how many planes will be given pulse - we simulate half toward middle of this at each end
+    pulse_units = 200.5  #
+    num_steps =  4000    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
+    DisplaySteps = 50    # every so many simulation steps we call the visualize code
+    WireSteps = 1        # every so many simulation steps we call the visualize code
+
+if simnum==2:            #
+    gridx = 800          # 
+    gridy = 40           # 
+    gridz = 40           # 
+    speedup = 300        # sort of rushing the simulation time
+    pulse_width=300      # how many planes will be given pulse - we simulate half toward middle of this at each end
+    pulse_units = 100.5  #
+    num_steps =  2000    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
+    DisplaySteps = 5000  # every so many simulation steps we call the visualize code
+    WireSteps = 1        # every so many simulation steps we call the visualize code
+
 
 #     gridx gridy gridz  = total electrons
 # Enough GPU memory
@@ -127,7 +146,6 @@ hydrogen_spacing = 3.34e-9  # 3.34 nanometers between atoms in hydrogen gas
 copper_spacing = 0.128e-9  # 3.34 nanometers between atoms in copper solid
 initial_spacing = copper_spacing*47  # 47^3 is about 100,000 and 1 free electron for every 100,000 copper atoms
 initial_radius = 5.29e-11 #  initial electron radius for hydrogen atom - got at least two times
-pulse_units = 200.5
 pulse_offset =pulse_units*initial_spacing    #  how much the first few planes are offset
 pulse_speed = 0    # in meters per second 
 pulse_sinwave = False  # True if pulse should be sin wave
@@ -139,17 +157,15 @@ bounds = ((0, gridx*initial_spacing), (0, gridy*initial_spacing), (0, gridz*init
 # bounds = ((-1.0*initial_spacing, (gridx+1.0)*initial_spacing), (-1.0*initial_spacing, (gridy+1.0)*initial_spacing), (-1.0*initial_spacing, (gridz+1.0)*initial_spacing))
 
 # Time stepping
-num_steps =  4000     # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
-DisplaySteps = 10    # every so many simulation steps we call the visualize code
-WireSteps = 1        # every so many simulation steps we call the visualize code
 visualize_start= int(pulse_width/3) # have initial pulse electrons we don't really want to see 
 visualize_stop = int(gridx-pulse_width/3) # really only goes up to one less than this but since starts at zero this many
 visualize_plane_step = int((visualize_stop-visualize_start)/7) # Only show one every this many planes in data
+sim_start = 0         # can be visualize_start
+sim_stop = gridx      # can be visualize_stop
 wire_start = 0        # can look at a smaller section 
 wire_stop = gridx
 max_neighbor_grids=50      # maximum up or down the X direction that we calculate forces for electrons
 
-speedup = 300       # sort of rushing the simulation time
 proprange=visualize_stop-visualize_start # not simulating either end of the wire so only middle range for signal to propagage
 dt = speedup*proprange*initial_spacing/c/num_steps  # would like total simulation time to be long enough for light wave to just cross grid 
 
@@ -556,7 +572,7 @@ def update_pv(dt):
     x_indices = cp.arange(gridx).reshape(gridx, 1, 1, 1)  # Reshape for broadcasting
     # Create a boolean mask where True indicates the indices to be updated
     # We only update the same part we are visualizing 
-    update_mask = (x_indices > visualize_start) & (x_indices < visualize_stop)
+    update_mask = (x_indices >= sim_start) & (x_indices < sim_stop)
     # update_mask = x_indices > -1 
 
     # Apply updates using the mask for selective application
