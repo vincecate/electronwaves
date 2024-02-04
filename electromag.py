@@ -111,14 +111,13 @@ else:
 # $1 argument gets saved to simnum so can do batch of several simulations from script
 # have a set to try to get projection to speed of light in full size plane wave
 
-# These should all have the same pulse_units to be fair -  may want to change to simple one dim array
+# These should all have the same pulse width to be fair -  
 if simnum==1:            # .13% of light speed on Feb 2 changed units to 20.5 so all the same 
     gridx = 1500         # 
     gridy = 20           # 
     gridz = 20           # 
     speedup = 300        # sort of rushing the simulation time
     pulse_width=100      # how many planes will be given pulse - we simulate half toward middle of this at each end
-    pulse_units =100.5   #
     num_steps =  2500    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
     DisplaySteps = 50    # every so many simulation steps we call the visualize code
     WireSteps = 1        # every so many simulation steps we call the visualize code
@@ -129,7 +128,6 @@ if simnum==2:            # Ug came out slower when was predicting much faster - 
     gridz = 40           # 
     speedup = 300        # sort of rushing the simulation time
     pulse_width=100      # how many planes will be given pulse - we simulate half toward middle of this at each end
-    pulse_units =100.5   #
     num_steps =  2500    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
     DisplaySteps = 5000  # every so many simulation steps we call the visualize code
     WireSteps = 1        # every so many simulation steps we call the visualize code
@@ -141,18 +139,16 @@ if simnum==3:            #
     gridz = 80           # 
     speedup = 300        # sort of rushing the simulation time
     pulse_width=100      # how many planes will be given pulse - we simulate half toward middle of this at each end
-    pulse_units =100.5   #
     num_steps =  2500    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
     DisplaySteps = 5000  # every so many simulation steps we call the visualize code
     WireSteps = 1        # every so many simulation steps we call the visualize code
 
 if simnum==4:            #
     gridx = 160          # 
-    gridy = 160           # 
-    gridz = 160           # 
+    gridy = 160          # 
+    gridz = 160          # 
     speedup = 300        # sort of rushing the simulation time
-    pulse_width=40       # how many planes will be given pulse - we simulate half toward middle of this at each end
-    pulse_units = 20.5   #
+    pulse_width=100      # how many planes will be given pulse - we simulate half toward middle of this at each end
     num_steps =  2500    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
     DisplaySteps = 5000  # every so many simulation steps we call the visualize code
     WireSteps = 1        # every so many simulation steps we call the visualize code
@@ -188,7 +184,6 @@ hydrogen_spacing = 3.34e-9  # 3.34 nanometers between atoms in hydrogen gas
 copper_spacing = 0.128e-9  # 3.34 nanometers between atoms in copper solid
 initial_spacing = copper_spacing*47  # 47^3 is about 100,000 and 1 free electron for every 100,000 copper atoms
 initial_radius = 5.29e-11 #  initial electron radius for hydrogen atom - got at least two times
-pulse_offset =pulse_units*initial_spacing    #  how much the first few planes are offset
 pulse_speed = 0    # in meters per second 
 pulse_sinwave = False  # True if pulse should be sin wave
 pulsehalf=False    # True to only pulse half the plane
@@ -214,7 +209,7 @@ dt = speedup*proprange*initial_spacing/c/num_steps  # would like total simulatio
 coulombs_constant = 1 / (4 * cp.pi * epsilon_0)  # Coulomb's constant 
 
 # Make string of some settings to put on output graph 
-sim_settings = f"gridx {gridx} gridy {gridy} gridz {gridz} speedup {speedup} Spacing: {initial_spacing:.8e} \n Pulse Width {pulse_width} Speed {pulse_speed:.8e} Units {pulse_units} Steps: {num_steps}"
+sim_settings = f"gridx {gridx} gridy {gridy} gridz {gridz} speedup {speedup} Spacing: {initial_spacing:.8e} \n Pulse Width {pulse_width} Speed {pulse_speed:.8e} Steps: {num_steps}"
 
 def GPUMem():
     # Get total and free memory in bytes
@@ -233,43 +228,17 @@ forces = cp.zeros((gridx, gridy, gridz, 3))
 GPUMem()
 
 
-# Global 3D arrays with 3 unit arrays as data
-# nucleus_positions 
-# electron_positions 
-# electron_velocities 
-# forces
-# Further initialization and computations go here
-
-
-
-# Check if 'cp' is CuPy and CUDA is available
-def checkgpu():
-    if hasattr(cp, 'cuda') and cp.cuda.is_available():
-        print("CUDA is available")
-        num_gpus = cp.cuda.runtime.getDeviceCount()
-        print(f"Number of available GPUs: {num_gpus}")
-    
-        # Get the ID of the current GPU
-        current_gpu_id = cp.cuda.get_device_id()
-        print(f"Current GPU ID: {current_gpu_id}")
-    else:
-        print("CUDA is not available or cp is NumPy")
-
-
-
-
-
-# Initialize the 3 of the main arrays (forces ok at zeros)
 def initialize_atoms():
+    global initial_radius, electron_velocities, electron_positions, nucleus_positions, gridx, gridy, gridz, initial_spacing, initialize_orbits, electron_speed, pulse_width
 
-    global initial_radius, electron_velocities, electron_positions, nucleus_positions, gridx, gridy, gridz, initial_spacing, initialize_orbits, electron_speed
-
-    # Initialize nucleus positions
+    # Initialize nucleus positions with modified X spacing conditionally
     x, y, z = cp.indices((gridx, gridy, gridz))
-    nucleus_positions = cp.stack((x, y, z), axis=-1) * initial_spacing
+    # Apply half spacing for X before pulse_width, otherwise use initial_spacing
+    modified_x_spacing = cp.where(x < pulse_width, initial_spacing / 2, initial_spacing)
+    nucleus_positions = cp.stack((x * modified_x_spacing, y, z), axis=-1) * initial_spacing
 
     # Random angles for the initial positions
-    theta = cp.random.uniform(0, 2*cp.pi, size=(gridx, gridy, gridz))
+    theta = cp.random.uniform(0, 2 * cp.pi, size=(gridx, gridy, gridz))
     phi = cp.random.uniform(0, cp.pi, size=(gridx, gridy, gridz))
 
     # Position in spherical coordinates
@@ -278,6 +247,7 @@ def initialize_atoms():
     ez = nucleus_positions[..., 2] + initial_radius * cp.cos(phi)
 
     electron_positions = cp.stack((ex, ey, ez), axis=-1)
+
 
     if initialize_orbits:
         # Random vectors
@@ -348,7 +318,7 @@ def visualize_atoms(epositions, evelocities, step, t):
 
 
     #  Could do safety check here and not include exlectrons out of bounds in visualization XXX
-    for x in range(visualize_start, visualize_stop, visualize_plane_step):  # pulse at x=0,1,2  so first light will be 3
+    for x in range(visualize_start, visualize_stop, visualize_plane_step):  # 
         totalxdiff=0.0
         for y in range(gridy):
             for z in range(gridz):
@@ -396,6 +366,18 @@ def visualize_atoms(epositions, evelocities, step, t):
     plt.close(fig)  # Close the figure to free memory
 
 
+# Check if 'cp' is CuPy and CUDA is available
+def checkgpu():
+    if hasattr(cp, 'cuda') and cp.cuda.is_available():
+        print("CUDA is available")
+        num_gpus = cp.cuda.runtime.getDeviceCount()
+        print(f"Number of available GPUs: {num_gpus}")
+    
+        # Get the ID of the current GPU
+        current_gpu_id = cp.cuda.get_device_id()
+        print(f"Current GPU ID: {current_gpu_id}")
+    else:
+        print("CUDA is not available or cp is NumPy")
 
 # The wire runs in the X direction and electrons at each grid X,Y,Z 
 # have an x,y,z position that started near nucleus x,y,z
@@ -439,7 +421,9 @@ def visualize_wire(averaged_xdiff, step, t):
     fig, ax = plt.subplots(figsize=(12.8, 9.6))
 
     #  Want to plot only betweew wire_start and wire_stop
-    ax.plot(range(wire_start, wire_stop), averaged_xdiff[wire_start:wire_stop], marker='o')
+    # ax.plot(range(wire_start, wire_stop), averaged_xdiff[wire_start:wire_stop], marker='o')
+    ax.plot(range(0, len(averaged_xdiff)), averaged_xdiff, marker='o')
+
 
     ax.set_xlabel('X index')
     ax.set_ylabel('Average X Difference')
@@ -450,29 +434,6 @@ def visualize_wire(averaged_xdiff, step, t):
     filename = os.path.join('simulation', f'wire_{step}.png')
     plt.savefig(filename)
     plt.close(fig)  # Close the figure to free memory
-
-
-# Need to make Initial pulse by moving few rows of electrons 
-#
-# Displace electrons in half the first 3 x layers
-# transverse wave so in x=0 plane we displace in the x direction
-def pulse():
-    global pulse_width, pulse_speed, electron_positions, electron_velocities
-    yrange=gridy
-    if pulsehalf:
-        yrange=int(gridy/2)
-    for x in range(0,pulse_width):
-        if pulse_sinwave:
-            offset_add = -1*pulse_offset*np.sin(2*np.pi*x/pulse_width)
-            speed_add = -1*pulse_speed*np.sin(2*np.pi*x/pulse_width)
-        else:
-            offset_add = pulse_offset
-            speed_add = pulse_speed
-        for y in range(yrange):
-            for z in range(gridz):
-                electron_positions[x,y,z][0] += offset_add
-                electron_velocities[x,y,z][0] += speed_add
-
 
 
 
@@ -497,102 +458,6 @@ def calculate_forces_all():
 
     # Sum forces from all other electrons for each electron
     forces=cp.sum(normforces, axis=1)
-
-
-#  We are simulating electrons in a wire
-#  The grix is large like 3000 and the length of the wire
-#  The gridy and gridz are small like 10, 20, or 30 representing the width of the wire
-#  The initial position of the electrons is calculated from their grid positon in the electron_positions array.
-#  The simulation is assumed to be a short enough time that electrons will not have moved far.
-#  If we calculate forces for max_neighbor_grids up/down the X dimension it will be accurate enough.
-#  max_neighbor_grids is a global but will start with 50
-def calculate_forces_nearby():
-    global electron_positions, forces, gridx, gridy, gridz, max_neighbor_grids, coulombs_constant, electron_charge
-
-    # Reset forces to zero before calculation
-    forces.fill(0)
-
-    # Loop through all electrons by their grid indices
-    for x in range(gridx):
-        for y in range(gridy):
-            for z in range(gridz):
-                # Calculate range of x indices to consider based on max_neighbor_grids
-                x_start = max(0, x - max_neighbor_grids)
-                x_end = min(gridx, x + max_neighbor_grids + 1)  # +1 because range end is exclusive
-                
-                # Accumulator for forces on the current electron
-                force_on_current = cp.zeros(3)
-                
-                # Loop through nearby electrons in the x direction and all y, z
-                for xi in range(x_start, x_end):
-                    for yi in range(gridy):
-                        for zi in range(gridz):
-                            if xi == x and yi == y and zi == z:
-                                continue  # Skip self-interaction
-                            
-                            # Compute distance vector between current electron and others
-                            delta_r = electron_positions[x, y, z] - electron_positions[xi, yi, zi]
-                            distance = cp.linalg.norm(delta_r)
-                            if distance == 0:  # Prevent division by zero
-                                continue
-                            
-                            # Calculate force magnitude using Coulomb's law
-                            force_magnitude = coulombs_constant * (electron_charge ** 2) / (distance ** 2)
-                            
-                            # Calculate force vector and add it to the accumulator
-                            force_on_current += (delta_r / distance) * force_magnitude
-                
-                # Update the forces array with the calculated force
-                forces[x, y, z] = force_on_current
-
-
-
-def calculate_forces_chunked():
-    global electron_positions, forces, gridx, gridy, gridz, max_distance
-    forces.fill(0)  # Reset forces to zero
-
-    # Number of electrons
-    num_electrons = gridx * gridy * gridz
-
-    # Calculate chunk size based on available memory and desired batch size
-    # Adjust `batch_size` based on your GPU's memory capacity
-    batch_size = 5000  # Example batch size, adjust based on your system's capacity
-
-    for start_idx in range(0, num_electrons, batch_size):
-        end_idx = min(start_idx + batch_size, num_electrons)
-
-        # Extract batch positions
-        batch_positions = electron_positions.reshape(-1, 3)[start_idx:end_idx]
-
-        # Compute distances and forces between the batch and all electrons
-        for other_start in range(0, num_electrons, batch_size):
-            other_end = min(other_start + batch_size, num_electrons)
-
-            # Extract positions of other electrons to compare with the current batch
-            other_positions = electron_positions.reshape(-1, 3)[other_start:other_end]
-
-            # Calculate pairwise differences and distances
-            delta_r = batch_positions[:, None, :] - other_positions[None, :, :]
-            distances = cp.sqrt(cp.sum(delta_r**2, axis=2))
-
-            # Apply max distance constraint
-            mask = (distances < max_distance * initial_spacing) & (distances > 0)  # Exclude self-interactions
-            distances[~mask] = cp.inf
-
-            # Calculate forces
-            force_magnitude = coulombs_constant * (electron_charge**2) / distances**2
-            force_direction = delta_r / distances[..., None]
-
-            # Sum forces and update the forces array
-            total_forces = cp.sum(force_magnitude[..., None] * force_direction, axis=1)
-
-            # Update forces for the current batch
-            forces.reshape(-1, 3)[start_idx:end_idx] += total_forces
-
-    # Reshape forces back to the original shape
-    forces = forces.reshape(gridx, gridy, gridz, 3)
-
-
 
 
 
@@ -657,8 +522,6 @@ def main():
     copyvelocities=electron_velocities.get() # get makes Numpy copy so runs on CPU in Dask
     future = client.submit(visualize_atoms, copypositions, copyvelocities, -1, 0.0)
     futures.append(future)
-    print("Doing pulse")
-    pulse()
     # main simulation loop
     for step in range(num_steps):
         t = step * dt

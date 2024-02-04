@@ -17,6 +17,6 @@ fi
 rm cropped/*
 date
 
-./electromag.py
+./electromag.py $1
 
 
