@@ -225,17 +225,25 @@ electron_positions = cp.zeros((gridx, gridy, gridz, 3))
 electron_velocities = cp.zeros((gridx, gridy, gridz, 3))
 forces = cp.zeros((gridx, gridy, gridz, 3))
 
-GPUMem()
-
-
 def initialize_atoms():
     global initial_radius, electron_velocities, electron_positions, nucleus_positions, gridx, gridy, gridz, initial_spacing, initialize_orbits, electron_speed, pulse_width
 
-    # Initialize nucleus positions with modified X spacing conditionally
     x, y, z = cp.indices((gridx, gridy, gridz))
-    # Apply half spacing for X before pulse_width, otherwise use initial_spacing
-    modified_x_spacing = cp.where(x < pulse_width, initial_spacing / 2, initial_spacing)
-    nucleus_positions = cp.stack((x * modified_x_spacing, y, z), axis=-1) * initial_spacing
+
+    # Calculate the x positions: half spacing for the first pulse_width, then continue with full spacing
+    half_spacing_x_positions = cp.linspace(0, (pulse_width - 1) * (initial_spacing / 2), pulse_width)
+    full_spacing_start = half_spacing_x_positions[-1] + initial_spacing
+    full_spacing_x_positions = cp.linspace(full_spacing_start, full_spacing_start + (gridx - pulse_width - 1) * initial_spacing, gridx - pulse_width)
+
+    # Combine the two arrays to get the modified x positions
+    modified_x_positions = cp.concatenate((half_spacing_x_positions, full_spacing_x_positions))
+
+    # Use broadcasting to create a full grid of modified x positions
+    modified_x_grid = cp.tile(modified_x_positions, (gridy, gridz, 1)).transpose(2, 0, 1)
+
+    # Stack with y and z positions
+    nucleus_positions = cp.stack((modified_x_grid, y * initial_spacing, z * initial_spacing), axis=-1)
+
 
     # Random angles for the initial positions
     theta = cp.random.uniform(0, 2 * cp.pi, size=(gridx, gridy, gridz))
