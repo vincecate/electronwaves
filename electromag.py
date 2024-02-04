@@ -96,30 +96,41 @@ import dask
 from dask import delayed
 from dask.distributed import Client, wait, LocalCluster
 import multiprocessing
-
 import os
+import sys
 
-simnum=2       # going to have a set to try to get projection to speed of light in full size plane wave
+# Check if at least one argument is provided (excluding the script name)
+if len(sys.argv) > 1:
+    simnum = int(sys.argv[1])  # The first argument passed to the script
+    print(f"Simulation number provided: {simnum}")
+else:
+    print("No simulation number provided. Exiting.")
+    sys.exit(1)  # Exit the script with an error code
 
-if simnum==1:            # .13% of light speed on Feb 2  
+
+# $1 argument gets saved to simnum so can do batch of several simulations from script
+# have a set to try to get projection to speed of light in full size plane wave
+
+# These should all have the same pulse_units to be fair -  may want to change to simple one dim array
+if simnum==1:            # .13% of light speed on Feb 2 changed units to 20.5 so all the same 
     gridx = 1500         # 
     gridy = 20           # 
     gridz = 20           # 
     speedup = 300        # sort of rushing the simulation time
-    pulse_width=600      # how many planes will be given pulse - we simulate half toward middle of this at each end
-    pulse_units = 200.5  #
-    num_steps =  4000    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
+    pulse_width=100      # how many planes will be given pulse - we simulate half toward middle of this at each end
+    pulse_units =100.5   #
+    num_steps =  2500    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
     DisplaySteps = 50    # every so many simulation steps we call the visualize code
     WireSteps = 1        # every so many simulation steps we call the visualize code
 
-if simnum==2:            #
+if simnum==2:            # Ug came out slower when was predicting much faster - might need to run longer to get real speed
     gridx = 800          # 
     gridy = 40           # 
     gridz = 40           # 
     speedup = 300        # sort of rushing the simulation time
-    pulse_width=300      # how many planes will be given pulse - we simulate half toward middle of this at each end
-    pulse_units = 100.5  #
-    num_steps =  2000    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
+    pulse_width=100      # how many planes will be given pulse - we simulate half toward middle of this at each end
+    pulse_units =100.5   #
+    num_steps =  2500    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
     DisplaySteps = 5000  # every so many simulation steps we call the visualize code
     WireSteps = 1        # every so many simulation steps we call the visualize code
 
@@ -130,11 +141,30 @@ if simnum==3:            #
     gridz = 80           # 
     speedup = 300        # sort of rushing the simulation time
     pulse_width=100      # how many planes will be given pulse - we simulate half toward middle of this at each end
-    pulse_units = 50.5  #
-    num_steps =  2000    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
+    pulse_units =100.5   #
+    num_steps =  2500    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
     DisplaySteps = 5000  # every so many simulation steps we call the visualize code
     WireSteps = 1        # every so many simulation steps we call the visualize code
 
+if simnum==4:            #
+    gridx = 160          # 
+    gridy = 160           # 
+    gridz = 160           # 
+    speedup = 300        # sort of rushing the simulation time
+    pulse_width=40       # how many planes will be given pulse - we simulate half toward middle of this at each end
+    pulse_units = 20.5   #
+    num_steps =  2500    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
+    DisplaySteps = 5000  # every so many simulation steps we call the visualize code
+    WireSteps = 1        # every so many simulation steps we call the visualize code
+
+
+#     gridx gridy gridz  = total electrons
+# Enough GPU memory
+#        1500 20 20   = 600000 
+#        3300 10 10   = 330000
+#        800 40 40    = 1280000
+#        400 50 50    = 1000000
+#        300 100 100  = 3000000
 
 #     gridx gridy gridz  = total electrons
 # Enough GPU memory
