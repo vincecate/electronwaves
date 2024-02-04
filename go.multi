@@ -1,0 +1,24 @@
+#!/bin/bash  
+
+export MALLOC_TRIM_THRESHOLD_=65536
+
+# Define the directory name
+DIR="simulation"
+
+# Check if the directory exists
+if [ -d "$DIR" ]; then
+    # Directory exists, so remove all files inside it
+    rm -rf "$DIR"/*
+else
+    # Directory doesn't exist, so create it
+    mkdir "$DIR"
+fi
+
+for i in 1 2 3 4; do
+  echo "Iteration with i=$i"
+  date
+  ./electromag.py $i
+  rm cropped/*
+  ./makemovie.wire.nc.py
+  ./go.save
+done

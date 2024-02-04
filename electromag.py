@@ -112,19 +112,19 @@ else:
 # have a set to try to get projection to speed of light in full size plane wave
 
 # Making wider wires have deeper pulses so scaling is 3D to give better estimate for real wire extrapolation
-if simnum==1:            # .13% of light speed on Feb 2 changed units to 20.5 so all the same 
-    gridx = 200          # 
+if simnum==1:            # 
+    gridx = 500          # 
     gridy = 10           # 
     gridz = 10           # 
-    speedup = 300        # sort of rushing the simulation time
+    speedup = 30         # sort of rushing the simulation time
     pulse_width=20      # how many planes will be given pulse - we simulate half toward middle of this at each end
     num_steps =  2500    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
 
-if simnum==2:            # .13% of light speed on Feb 2 changed units to 20.5 so all the same 
-    gridx = 1500         #  can do 1500
+if simnum==2:            # 
+    gridx = 1000         #  can do 1500
     gridy = 20           # 
     gridz = 20           # 
-    speedup = 300        # sort of rushing the simulation time
+    speedup = 100        # sort of rushing the simulation time
     pulse_width=40      # how many planes will be given pulse - we simulate half toward middle of this at each end
     num_steps =  2500    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
 
