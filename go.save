@@ -1,0 +1,24 @@
+#!/bin/bash
+
+# Create the results directory if it does not exist
+mkdir -p results
+
+# Get the current date in YYYYMMDD format
+current_date=$(date +%Y%m%d)
+
+# Initialize the counter
+counter=1
+
+# Find the next available index for today's date
+while [[ -e "results/${current_date}.${counter}.mp4" ]] || [[ -e "results/${current_date}.${counter}" ]]; do
+    ((counter++))
+done
+
+# Move the simulation_video.mp4 to the results directory with the new name
+mv simulation_video.mp4 "results/${current_date}.${counter}.mp4"
+
+# Move the simulation to the results directory with the new name
+mv simulation "results/${current_date}.${counter}"
+
+echo "Files moved to results/${current_date}.${counter}"
+
