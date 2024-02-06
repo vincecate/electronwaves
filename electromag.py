@@ -112,6 +112,7 @@ else:
 # have a set to try to get projection to speed of light in full size plane wave
 
 effective_electron_mass = electron_mass   #  default is the same
+electron_thermal_speed = 1.1e6            # meters per second
 
 # Making wider wires have deeper pulses so scaling is 3D to give better estimate for real wire extrapolation
 if simnum==1:            # 
@@ -146,7 +147,6 @@ if simnum==4:            #
     speedup = 300        # sort of rushing the simulation time
     pulse_width=160      # how many planes will be given pulse - we simulate half toward middle of this at each end
     num_steps =  2500    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
-    effective_electron_mass = 0.1* electron_mass # want to see if light weight electrons can get us a higher percent of the speed of light
 
 if simnum==5:            #
     gridx = 160          # 
@@ -194,7 +194,7 @@ initial_radius = 5.29e-11 #  initial electron radius for hydrogen atom - got at 
 pulse_speed = 0    # in meters per second 
 pulse_sinwave = False  # True if pulse should be sin wave
 pulsehalf=False    # True to only pulse half the plane
-initialize_orbits=False          # can have electrons initialized to moving if True and not moving if False
+initialize_orbits=True          # can have electrons initialized to moving if True and not moving if False
 
 # bounds format is  ((minx,  maxx) , (miny, maxy), (minz, maxz))
 bounds = ((0, gridx*initial_spacing), (0, gridy*initial_spacing), (0, gridz*initial_spacing))
@@ -233,7 +233,8 @@ electron_velocities = cp.zeros((gridx, gridy, gridz, 3))
 forces = cp.zeros((gridx, gridy, gridz, 3))
 
 def initialize_atoms():
-    global initial_radius, electron_velocities, electron_positions, nucleus_positions, gridx, gridy, gridz, initial_spacing, initialize_orbits, electron_speed, pulse_width
+    global initial_radius, electron_velocities, electron_positions, nucleus_positions, gridx, gridy, gridz
+    global initial_spacing, initialize_orbits, electron_speed, pulse_width, electron_thermal_speed
 
     x, y, z = cp.indices((gridx, gridy, gridz))
 
@@ -278,7 +279,7 @@ def initialize_atoms():
         norms = cp.linalg.norm(perpendicular_vectors, axis=-1, keepdims=True)
         normalized_vectors = perpendicular_vectors / norms
 
-        electron_velocities = normalized_vectors * electron_speed
+        electron_velocities = normalized_vectors * electron_thermal_speed
     else:
         electron_velocities = cp.zeros((gridx, gridy, gridz, 3))
 
