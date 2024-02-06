@@ -14,11 +14,11 @@ else
     mkdir "$DIR"
 fi
 
-for i in 1 2 3 4; do
+for i in 1 2 3 4 5; do
   echo "Iteration with i=$i"
   date
   ./electromag.py $i
   rm cropped/*
   ./makemovie.wire.nc.py
-  ./go.save
+  ./go.save $i
 done

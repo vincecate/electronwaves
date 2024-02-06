@@ -116,24 +116,24 @@ if simnum==1:            #
     gridx = 500          # 
     gridy = 10           # 
     gridz = 10           # 
-    speedup = 30         # sort of rushing the simulation time
-    pulse_width=20      # how many planes will be given pulse - we simulate half toward middle of this at each end
-    num_steps =  2500    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
+    speedup = 100        # sort of rushing the simulation time
+    pulse_width=100       # how many planes will be given pulse - we simulate half toward middle of this at each end
+    num_steps =  5000    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
 
 if simnum==2:            # 
     gridx = 1000         #  can do 1500
     gridy = 20           # 
     gridz = 20           # 
-    speedup = 100        # sort of rushing the simulation time
-    pulse_width=40      # how many planes will be given pulse - we simulate half toward middle of this at each end
-    num_steps =  2500    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
+    speedup = 200        # sort of rushing the simulation time
+    pulse_width=100      # how many planes will be given pulse - we simulate half toward middle of this at each end
+    num_steps =  4000    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
 
 if simnum==3:            # Ug came out slower when was predicting much faster - might need to run longer to get real speed
     gridx = 800          # 
     gridy = 40           # 
     gridz = 40           # 
     speedup = 300        # sort of rushing the simulation time
-    pulse_width=80      # how many planes will be given pulse - we simulate half toward middle of this at each end
+    pulse_width=100      # how many planes will be given pulse - we simulate half toward middle of this at each end
     num_steps =  2500    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
 
 
@@ -185,7 +185,8 @@ electron_speed= 2188058
 # Atom spacing in meters
 hydrogen_spacing = 3.34e-9  # 3.34 nanometers between atoms in hydrogen gas
 copper_spacing = 0.128e-9  # 3.34 nanometers between atoms in copper solid
-initial_spacing = copper_spacing*47  # 47^3 is about 100,000 and 1 free electron for every 100,000 copper atoms
+#initial_spacing = copper_spacing*47  # 47^3 is about 100,000 and 1 free electron for every 100,000 copper atoms
+initial_spacing = copper_spacing  # 47^3 is about 100,000 and 1 free electron for every 100,000 copper atoms
 initial_radius = 5.29e-11 #  initial electron radius for hydrogen atom - got at least two times
 pulse_speed = 0    # in meters per second 
 pulse_sinwave = False  # True if pulse should be sin wave
@@ -212,7 +213,7 @@ dt = speedup*proprange*initial_spacing/c/num_steps  # would like total simulatio
 coulombs_constant = 1 / (4 * cp.pi * epsilon_0)  # Coulomb's constant 
 
 # Make string of some settings to put on output graph 
-sim_settings = f"simnum {simnum} gridx {gridx} gridy {gridy} gridz {gridz} speedup {speedup} Spacing: {initial_spacing:.8e} \n Pulse Width {pulse_width} Speed {pulse_speed:.8e} Steps: {num_steps}"
+sim_settings = f"simnum {simnum} gridx {gridx} gridy {gridy} gridz {gridz} speedup {speedup} \n Spacing: {initial_spacing:.8e} Pulse Width {pulse_width} Speed {pulse_speed:.8e} Steps: {num_steps}"
 
 def GPUMem():
     # Get total and free memory in bytes
