@@ -111,6 +111,8 @@ else:
 # $1 argument gets saved to simnum so can do batch of several simulations from script
 # have a set to try to get projection to speed of light in full size plane wave
 
+effective_electron_mass = electron_mass   #  default is the same
+
 # Making wider wires have deeper pulses so scaling is 3D to give better estimate for real wire extrapolation
 if simnum==1:            # 
     gridx = 500          # 
@@ -144,6 +146,7 @@ if simnum==4:            #
     speedup = 300        # sort of rushing the simulation time
     pulse_width=160      # how many planes will be given pulse - we simulate half toward middle of this at each end
     num_steps =  2500    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
+    effective_electron_mass = 0.1* electron_mass # want to see if light weight electrons can get us a higher percent of the speed of light
 
 if simnum==5:            #
     gridx = 160          # 
@@ -477,7 +480,7 @@ def update_pv(dt):
     global electron_velocities, electron_positions, bounds, forces, electron_mass, visualize_start, visualize_stop
 
     # acceleration based ono F=ma
-    acceleration = forces / electron_mass
+    acceleration = forces / effective_electron_mass
 
     # Update velocities
     new_velocities = electron_velocities + acceleration * dt
