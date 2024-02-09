@@ -118,6 +118,7 @@ else:
 
 effective_electron_mass = electron_mass   #  default is the same
 electron_thermal_speed = 1.1e6            # meters per second
+bounce_distance = 1e-10                   # closer than this and we make electrons bounce off each other
 
 # Making wider wires have deeper pulses so scaling is 3D to give better estimate for real wire extrapolation
 if simnum==1:            # 
@@ -492,6 +493,60 @@ def visualize_wire(averaged_xdiff, step, t):
     plt.close(fig)  # Close the figure to free memory
 
 
+def calculate_collision_velocity(v1, v2, p1, p2):
+    """
+    Calculate the new velocities of two particles undergoing an elastic collision.
+
+    Args:
+        v1 (ndarray): Velocity of the first particle before collision.
+        v2 (ndarray): Velocity of the second particle before collision.
+        p1 (ndarray): Position of the first particle.
+        p2 (ndarray): Position of the second particle.
+
+    Returns:
+        Tuple[ndarray, ndarray]: New velocities of the first and second particles.
+    """
+    # Calculate the unit vector in the direction of the collision
+    collision_vector = p1 - p2
+    collision_vector /= cp.linalg.norm(collision_vector)
+
+    # Calculate the projections of the velocities onto the collision vector
+    v1_proj = cp.dot(v1, collision_vector)
+    v2_proj = cp.dot(v2, collision_vector)
+
+    # Swap the velocity components along the collision vector (elastic collision)
+    v1_new = v1 - v1_proj * collision_vector + v2_proj * collision_vector
+    v2_new = v2 - v2_proj * collision_vector + v1_proj * collision_vector
+
+    return v1_new, v2_new
+
+
+def detect_and_resolve_collisions():
+    global electron_positions, electron_velocities, bounce_distance
+    # Compute pairwise distance matrix
+    diff = electron_positions[:, None, :, :] - electron_positions[None, :, :, :]
+    distances = cp.linalg.norm(diff, axis=-1)
+
+    # Find pairs that are too close: matrix where entry (i, j) is True if electrons i and j are too close
+    too_close = distances < bounce_distance
+    cp.fill_diagonal(too_close, False)  # Ignore self-comparisons
+
+    # Extract indices of electron pairs that are too close
+    collision_indices = cp.where(too_close)
+
+    for index in range(len(collision_indices[0])):
+        i1 = (collision_indices[0][index], collision_indices[1][index], collision_indices[2][index])
+        i2 = (collision_indices[3][index], collision_indices[4][index], collision_indices[5][index])
+
+        # Calculate new velocities for the colliding pairs
+        v1_new, v2_new = calculate_collision_velocity(electron_velocities[i1], electron_velocities[i2],
+                                                      electron_positions[i1], electron_positions[i2])
+
+        # Update velocities
+        electron_velocities[i1] = v1_new
+        electron_velocities[i2] = v2_new
+
+
 
 def calculate_forces_all():
     global electron_positions, forces, coulombs_constant, electron_charge
@@ -605,6 +660,10 @@ def main():
 
         print("Updating position and velocity", t)
         update_pv(dt)
+
+        print("detect and resolve collisions", t)
+        detect_and_resolve_collisions()
+
         cp.cuda.Stream.null.synchronize()         # free memory on the GPU
 
     copypositions=electron_positions.get()
