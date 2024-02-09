@@ -83,6 +83,11 @@
 # At room temperature a ratio of 1 electron in 100,000 copper atoms is really free.
 #   Same as saying only 0.001% or 10^-5 of the conduction electrons are free.
 
+#  Update idea Feb 9, 2024
+# In classical simulations, introducing a "hard sphere" collision model for very close distances could prevent physical 
+#  impossibilities like electron overlap. This involves detecting when electrons are within a certain minimum distance of 
+# each other and then calculating their trajectories post-collision based on conservation of momentum and energy, similar to billiard balls colliding.
+
 
 import cupy as cp
 import numpy as np   # numpy as np for CPU and now just for visualization 
@@ -188,8 +193,8 @@ electron_speed= 2188058
 # Atom spacing in meters
 hydrogen_spacing = 3.34e-9  # 3.34 nanometers between atoms in hydrogen gas
 copper_spacing = 0.128e-9  # 3.34 nanometers between atoms in copper solid
-#initial_spacing = copper_spacing*47  # 47^3 is about 100,000 and 1 free electron for every 100,000 copper atoms
-initial_spacing = copper_spacing  # 47^3 is about 100,000 and 1 free electron for every 100,000 copper atoms
+initial_spacing_gemini = 2.27e-10  # Gemini Ultra number for free electron spacing
+initial_spacing = copper_spacing*47  # 47^3 is about 100,000 and 1 free electron for every 100,000 copper atoms
 initial_radius = 5.29e-11 #  initial electron radius for hydrogen atom - got at least two times
 pulse_sinwave = False  # True if pulse should be sin wave
 pulsehalf=False    # True to only pulse half the plane
@@ -232,6 +237,49 @@ electron_positions = cp.zeros((gridx, gridy, gridz, 3))
 electron_velocities = cp.zeros((gridx, gridy, gridz, 3))
 forces = cp.zeros((gridx, gridy, gridz, 3))
 
+
+import cupy as cp
+import numpy as np
+
+
+def generate_thermal_velocities(num_electrons, temperature=300):
+    """
+    Generates random thermal velocity vectors. Velocities will have shape (num_electrons, 3).
+
+    Args:
+        num_electrons (int): Number of electrons to generate for.
+        temperature (float): Temperature (in Kelvin).
+
+    Returns:
+        cupy.ndarray: Array of shape (num_electrons, 3) containing random velocity vectors.
+    """
+
+
+    kb = 1.380649e-23  # Boltzmann constant
+    electron_mass = 9.1093837e-31  # kg
+    sigma = cp.sqrt(kb * temperature / electron_mass)  # Calculate sigma inside the function
+
+
+    # Sample and reshape to make shape compatible with grid
+    speeds = cp.random.normal(scale=sigma, size=num_electrons).reshape(gridx, gridy, gridz)
+    theta = cp.random.uniform(0, 2 * cp.pi, size=(gridx, gridy, gridz))
+    phi = cp.random.uniform(0, cp.pi, size=(gridx, gridy, gridz))
+
+    vx =  speeds * cp.sin(phi) * cp.cos(theta)
+    vy =  speeds * cp.sin(phi) * cp.sin(theta)
+    vz =  speeds * cp.cos(phi)
+
+    velocities = cp.stack((vx, vy,  vz), axis=-1)
+    return  velocities
+
+
+    # Optional: Plot a histogram for analysis
+    # plt.hist(speeds)
+    # filename = os.path.join('simulation', f'maxwell.boltzmann.png')
+    # plt.savefig(filename)
+    # plt.close()           # Close the figure to free memory
+
+
 def initialize_atoms():
     global initial_radius, electron_velocities, electron_positions, nucleus_positions, gridx, gridy, gridz
     global initial_spacing, initialize_orbits, electron_speed, pulse_width, electron_thermal_speed
@@ -271,20 +319,7 @@ def initialize_atoms():
 
 
     if initialize_orbits:
-        # Random vectors
-        random_vectors = cp.random.random((gridx, gridy, gridz, 3))
-
-        # Electron vectors
-        electron_vectors = electron_positions - nucleus_positions
-
-        # Perpendicular vectors
-        perpendicular_vectors = cp.cross(electron_vectors, random_vectors)
-
-        # Normalized vectors
-        norms = cp.linalg.norm(perpendicular_vectors, axis=-1, keepdims=True)
-        normalized_vectors = perpendicular_vectors / norms
-
-        electron_velocities = normalized_vectors * electron_thermal_speed
+        electron_velocities = generate_thermal_velocities(gridx*gridy*gridz, 300.0)
     else:
         electron_velocities = cp.zeros((gridx, gridy, gridz, 3))
 
