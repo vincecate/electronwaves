@@ -122,11 +122,11 @@ bounce_distance = 1e-10                   # closer than this and we make electro
 
 # Making wider wires have deeper pulses so scaling is 3D to give better estimate for real wire extrapolation
 if simnum==1:            # 
-    gridx = 500          # 
+    gridx = 2000          # 
     gridy = 10           # 
     gridz = 10           # 
-    speedup = 100        # sort of rushing the simulation time
-    pulse_width=200       # how many planes will be given pulse - we simulate half toward middle of this at each end
+    speedup = 300        # sort of rushing the simulation time
+    pulse_width=800       # how many planes will be given pulse - we simulate half toward middle of this at each end
     num_steps =  5000    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
 
 if simnum==2:            # 
@@ -267,28 +267,56 @@ def calculate_collision_velocity(v1, v2, p1, p2):
     return v1_new, v2_new
 
 
+
 def detect_and_resolve_collisions():
-    global electron_positions, electron_velocities, bounce_distance
+    global electron_positions, electron_velocities
 
-    # Flatten the arrays for easier processing
-    num_electrons = electron_positions.shape[0] * electron_positions.shape[1] * electron_positions.shape[2]
-    flat_positions = electron_positions.reshape(num_electrons, 3)
-    flat_velocities = electron_velocities.reshape(num_electrons, 3)
+    # Parameters
+    grid_res = 10
+    max_collisions_per_electron = 10
 
-    # Iterate over each electron to check for collisions
-    # Note: This iterative approach is a placeholder for demonstration. Consider spatial partitioning for efficiency.
-    for i in range(num_electrons - 1):
-        for j in range(i + 1, num_electrons):
-            distance = cp.linalg.norm(flat_positions[i] - flat_positions[j])
-            if distance < bounce_distance:
-                # Calculate new velocities for colliding electrons
-                v1_new, v2_new = calculate_collision_velocity(flat_velocities[i], flat_velocities[j],
-                                                              flat_positions[i], flat_positions[j])
-                flat_velocities[i], flat_velocities[j] = v1_new, v2_new
+    # Spatial partitioning
+    pos_min = cp.min(electron_positions, axis=(0,1,2))
+    pos_max = cp.max(electron_positions, axis=(0,1,2))
 
-    # Reshape the updated velocities back to their original shape
-    electron_velocities = flat_velocities.reshape(electron_positions.shape)
+    grid_min = (pos_min // grid_res) * grid_res
+    grid_max = (pos_max // grid_res + 1) * grid_res
 
+    # Generate CuPy keys
+    grid_keys = cp.floor((electron_positions - grid_min) / grid_res).astype(int)
+
+    # Grid hash table
+    grid_hash = {}
+    for i in range(len(grid_keys)):
+        key = ()
+        for x in grid_keys[i]:  
+            key += (x.tolist(),)
+
+        if key in grid_hash:
+           grid_hash[key].append(i) 
+        else:
+           grid_hash[key] = [i]
+
+
+    # Collision detection and resolution
+    for cell, elec_indices in grid_hash.items():
+        # Extract data for cell
+        pos = electron_positions[elec_indices]
+        vel = electron_velocities[elec_indices]
+
+        # Calculate distances and resolve collisions
+        distances = cp.linalg.norm(pos[:,cp.newaxis,:] - pos[cp.newaxis,:,:], axis=-1)
+        collide_pairs = cp.where(distances < bounce_distance)
+
+        collide_count = [0] * len(elec_indices)
+        for (i,j) in collide_pairs:
+            if collide_count[i] < max_collisions_per_electron:
+                vel[i], vel[j] = calculate_collision_velocity(vel[i], vel[j], pos[i], pos[j])
+                collide_count[i] += 1
+                collide_count[j] += 1
+
+    # Write back velocities
+    electron_velocities = vel
 
 
 def generate_thermal_velocities(num_electrons, temperature=300):
@@ -655,8 +683,8 @@ def main():
         print("Updating position and velocity", t)
         update_pv(dt)
 
-        # print("detect and resolve collisions", t)
-        # detect_and_resolve_collisions()
+        print("detect and resolve collisions", t)
+        detect_and_resolve_collisions()
 
         cp.cuda.Stream.null.synchronize()         # free memory on the GPU
 
