@@ -655,8 +655,8 @@ def main():
         print("Updating position and velocity", t)
         update_pv(dt)
 
-        print("detect and resolve collisions", t)
-        detect_and_resolve_collisions()
+        # print("detect and resolve collisions", t)
+        # detect_and_resolve_collisions()
 
         cp.cuda.Stream.null.synchronize()         # free memory on the GPU
 
