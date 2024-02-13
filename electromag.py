@@ -87,6 +87,9 @@
 # In classical simulations, introducing a "hard sphere" collision model for very close distances could prevent physical 
 #  impossibilities like electron overlap. This involves detecting when electrons are within a certain minimum distance of 
 # each other and then calculating their trajectories post-collision based on conservation of momentum and energy, similar to billiard balls colliding.
+#
+#  In the wire display it may be good to show average movement of each dX in a graph.  Perhaps this will show
+#  a much faster wave than what is probably a and "electron density wave".   Feb 12, 2024
 
 
 import cupy as cp
@@ -121,6 +124,14 @@ electron_thermal_speed = 1.1e6            # meters per second
 bounce_distance = 1e-10                   # closer than this and we make electrons bounce off each other
 
 # Making wider wires have deeper pulses so scaling is 3D to give better estimate for real wire extrapolation
+if simnum==0:            # 
+    gridx = 200          # 
+    gridy = 10           # 
+    gridz = 10           # 
+    speedup = 20         # sort of rushing the simulation time
+    pulse_width=80       # how many planes will be given pulse - we simulate half toward middle of this at each end
+    num_steps =  2000    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
+
 if simnum==1:            # 
     gridx = 2000          # 
     gridy = 10           # 
@@ -130,19 +141,19 @@ if simnum==1:            #
     num_steps =  5000    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
 
 if simnum==2:            # 
-    gridx = 1000         #  can do 1500
+    gridx = 70           #  could do 1500 before 2D code - here total is 28,000 electrons
     gridy = 20           # 
     gridz = 20           # 
-    speedup = 200        # sort of rushing the simulation time
-    pulse_width=200      # how many planes will be given pulse - we simulate half toward middle of this at each end
-    num_steps =  4000    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
+    speedup = 100        # sort of rushing the simulation time
+    pulse_width=40      # how many planes will be given pulse - we simulate half toward middle of this at each end
+    num_steps =  2000    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
 
 if simnum==3:            # Ug came out slower when was predicting much faster - might need to run longer to get real speed
-    gridx = 800          # 
-    gridy = 40           # 
-    gridz = 40           # 
+    gridx = 30           # 
+    gridy = 30           # 
+    gridz = 30           # 
     speedup = 300        # sort of rushing the simulation time
-    pulse_width=200      # how many planes will be given pulse - we simulate half toward middle of this at each end
+    pulse_width=20      # how many planes will be given pulse - we simulate half toward middle of this at each end
     num_steps =  2000    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
 
 
@@ -233,10 +244,16 @@ def GPUMem():
 
 GPUMem()
 
-nucleus_positions = cp.zeros((gridx, gridy, gridz, 3))
-electron_positions = cp.zeros((gridx, gridy, gridz, 3))
-electron_velocities = cp.zeros((gridx, gridy, gridz, 3))
-forces = cp.zeros((gridx, gridy, gridz, 3))
+# grid_size is the total number of electrons
+grid_size = gridx * gridy * gridz
+# Initialize positions and velocities as single-dimensional arrays
+#electron_positions = cp.zeros((gridx, gridy, gridz, 3))    # old way
+
+electron_positions = cp.zeros((grid_size, 3))
+
+
+electron_velocities = cp.zeros((grid_size, 3))
+forces = cp.zeros((grid_size, 3))
 
 
 def calculate_collision_velocity(v1, v2, p1, p2):
@@ -268,86 +285,62 @@ def calculate_collision_velocity(v1, v2, p1, p2):
 
 
 
-def detect_and_resolve_collisions():
-    global electron_positions, electron_velocities
-
-    # Parameters
-    grid_res = 10
-    max_collisions_per_electron = 10
-
-    # Spatial partitioning
-    pos_min = cp.min(electron_positions, axis=(0,1,2))
-    pos_max = cp.max(electron_positions, axis=(0,1,2))
-
-    grid_min = (pos_min // grid_res) * grid_res
-    grid_max = (pos_max // grid_res + 1) * grid_res
-
-    # Generate CuPy keys
-    grid_keys = cp.floor((electron_positions - grid_min) / grid_res).astype(int)
-
-    # Grid hash table
-    grid_hash = {}
-    for i in range(len(grid_keys)):
-        key = ()
-        for x in grid_keys[i]:  
-            key += (x.tolist(),)
-
-        if key in grid_hash:
-           grid_hash[key].append(i) 
-        else:
-           grid_hash[key] = [i]
 
 
-    # Collision detection and resolution
-    for cell, elec_indices in grid_hash.items():
-        # Extract data for cell
-        pos = electron_positions[elec_indices]
-        vel = electron_velocities[elec_indices]
+def detect_collisions(electron_positions, bounce_distance):
+    n_electrons = electron_positions.shape[0]
+    diff = electron_positions[:, None, :] - electron_positions[None, :, :]  # Shape: (n, n, 3)
+    distances = cp.sqrt(cp.sum(diff**2, axis=2))  # Shape: (n, n)
+    colliding = distances < bounce_distance
+    cp.fill_diagonal(colliding, False)  # Ignore self-collision
+    return colliding
 
-        # Calculate distances and resolve collisions
-        distances = cp.linalg.norm(pos[:,cp.newaxis,:] - pos[cp.newaxis,:,:], axis=-1)
-        collide_pairs = cp.where(distances < bounce_distance)
 
-        collide_count = [0] * len(elec_indices)
-        for (i,j) in collide_pairs:
-            if collide_count[i] < max_collisions_per_electron:
-                vel[i], vel[j] = calculate_collision_velocity(vel[i], vel[j], pos[i], pos[j])
-                collide_count[i] += 1
-                collide_count[j] += 1
+#  This is just swapping velocities which is not accurate
+def resolve_collisions(electron_positions, electron_velocities, bounce_distance):
+    colliding = detect_collisions(electron_positions, bounce_distance)
+    n_electrons = electron_positions.shape[0]
 
-    # Write back velocities
-    electron_velocities = vel
+    for i in range(n_electrons):
+        for j in range(i + 1, n_electrons):  # Avoid double processing pairs
+            if colliding[i, j]:
+                # Simplified collision resolution: Swap velocities
+                electron_velocities[i], electron_velocities[j] = electron_velocities[j], electron_velocities[i]
 
 
 def generate_thermal_velocities(num_electrons, temperature=300):
     """
-    Generates random thermal velocity vectors. Velocities will have shape (num_electrons, 3).
+    Generates random thermal velocity vectors for a given number of electrons
+    at a specified temperature. The Maxwell-Boltzmann distribution is used to
+    determine the magnitudes of the velocities.
 
     Args:
-        num_electrons (int): Number of electrons to generate for.
-        temperature (float): Temperature (in Kelvin).
+        num_electrons (int): Number of electrons to generate velocities for.
+        temperature (float): Temperature in Kelvin.
 
     Returns:
-        cupy.ndarray: Array of shape (num_electrons, 3) containing random velocity vectors.
+        cupy.ndarray: An array of shape (num_electrons, 3) containing random
+                      velocity vectors for each electron.
     """
 
+    kb = 1.380649e-23  # Boltzmann constant, in J/K
+    electron_mass = 9.1093837e-31  # Electron mass, in kg
 
-    kb = 1.380649e-23  # Boltzmann constant
-    electron_mass = 9.1093837e-31  # kg
-    sigma = cp.sqrt(kb * temperature / electron_mass)  # Calculate sigma inside the function
+    # Calculate the standard deviation of the speed distribution
+    sigma = cp.sqrt(kb * temperature / electron_mass)
 
+    # Generate random speeds from a Maxwell-Boltzmann distribution
+    # Use the fact that the Maxwell-Boltzmann distribution for speeds in one dimension
+    # is a normal distribution with mean 0 and standard deviation sigma
+    vx = cp.random.normal(loc=0, scale=sigma, size=num_electrons)
+    vy = cp.random.normal(loc=0, scale=sigma, size=num_electrons)
+    vz = cp.random.normal(loc=0, scale=sigma, size=num_electrons)
 
-    # Sample and reshape to make shape compatible with grid
-    speeds = cp.random.normal(scale=sigma, size=num_electrons).reshape(gridx, gridy, gridz)
-    theta = cp.random.uniform(0, 2 * cp.pi, size=(gridx, gridy, gridz))
-    phi = cp.random.uniform(0, cp.pi, size=(gridx, gridy, gridz))
+    # Combine the velocity components into a single 2D array
+    velocities = cp.stack((vx, vy, vz), axis=-1)
 
-    vx =  speeds * cp.sin(phi) * cp.cos(theta)
-    vy =  speeds * cp.sin(phi) * cp.sin(theta)
-    vz =  speeds * cp.cos(phi)
+    return velocities
 
-    velocities = cp.stack((vx, vy,  vz), axis=-1)
-    return  velocities
 
 
     # Optional: Plot a histogram for analysis
@@ -357,48 +350,43 @@ def generate_thermal_velocities(num_electrons, temperature=300):
     # plt.close()           # Close the figure to free memory
 
 
+
 def initialize_atoms():
-    global initial_radius, electron_velocities, electron_positions, nucleus_positions, gridx, gridy, gridz
+    global initial_radius, electron_velocities, electron_positions
     global initial_spacing, initialize_orbits, electron_speed, pulse_width, electron_thermal_speed
 
-    x, y, z = cp.indices((gridx, gridy, gridz))
+    grid_size = gridx * gridy * gridz  # Total number of atoms
 
-    pulse_spacing = initial_spacing/2
-    grid_non_pulse = gridx - pulse_width 
-    total_space = initial_spacing*gridx
-    rest_space = total_space - pulse_spacing*pulse_width
+    # Calculate the modified x positions with pulse spacing
+    pulse_spacing = initial_spacing / 2
+    grid_non_pulse = gridx - pulse_width
+    total_space = initial_spacing * gridx
+    rest_space = total_space - pulse_spacing * pulse_width
     rest_spacing = rest_space / grid_non_pulse
-    # Calculate the x positions: half spacing for the first pulse_width, then continue with full spacing
     half_spacing_x_positions = cp.linspace(0, (pulse_width - 1) * pulse_spacing, pulse_width)
     full_spacing_start = half_spacing_x_positions[-1] + rest_spacing
-    full_spacing_x_positions = cp.linspace(full_spacing_start, full_spacing_start + (gridx - pulse_width - 1) * rest_spacing, gridx - pulse_width)
-
-    # Combine the two arrays to get the modified x positions
+    full_spacing_x_positions = cp.linspace(full_spacing_start, total_space - rest_spacing, gridx - pulse_width)
     modified_x_positions = cp.concatenate((half_spacing_x_positions, full_spacing_x_positions))
 
-    # Use broadcasting to create a full grid of modified x positions
-    modified_x_grid = cp.tile(modified_x_positions, (gridy, gridz, 1)).transpose(2, 0, 1)
+    # Generate y and z positions using initial_spacing, ensuring the entire grid is covered
+    y_positions = cp.arange(gridy) * initial_spacing
+    z_positions = cp.arange(gridz) * initial_spacing
 
-    # Stack with y and z positions
-    nucleus_positions = cp.stack((modified_x_grid, y * initial_spacing, z * initial_spacing), axis=-1)
+    # Create the full 3D grid of positions in a 2D format
+    x_grid, y_grid, z_grid = cp.meshgrid(modified_x_positions, y_positions, z_positions, indexing='ij')
+    x_flat = x_grid.flatten()
+    y_flat = y_grid.flatten()
+    z_flat = z_grid.flatten()
 
+    # Stack x, y, z positions to form the (grid_size, 3) electron_positions array
+    electron_positions = cp.stack((x_flat, y_flat, z_flat), axis=-1)
 
-    # Random angles for the initial positions
-    theta = cp.random.uniform(0, 2 * cp.pi, size=(gridx, gridy, gridz))
-    phi = cp.random.uniform(0, cp.pi, size=(gridx, gridy, gridz))
-
-    # Position in spherical coordinates
-    ex = nucleus_positions[..., 0] + initial_radius * cp.sin(phi) * cp.cos(theta)
-    ey = nucleus_positions[..., 1] + initial_radius * cp.sin(phi) * cp.sin(theta)
-    ez = nucleus_positions[..., 2] + initial_radius * cp.cos(phi)
-
-    electron_positions = cp.stack((ex, ey, ez), axis=-1)
-
-
+    # Initialize velocities
     if initialize_orbits:
-        electron_velocities = generate_thermal_velocities(gridx*gridy*gridz, 300.0)
+        electron_velocities = generate_thermal_velocities(grid_size, 300.0)  # Adjusted to generate velocities for all electrons
     else:
-        electron_velocities = cp.zeros((gridx, gridy, gridz, 3))
+        electron_velocities = cp.zeros((grid_size, 3))  # Use the new 2D structure directly
+
 
 
 
@@ -410,6 +398,9 @@ def initialize_atoms():
 def visualize_atoms(epositions, evelocities, step, t):
     global gridx, gridy, gridz, bounds, nucleus_positions, electron_speed, electron_velocities  # all these global are really constants
     global visualize_start, visualize_stop, visualize_plane_step
+
+    print("visualize_atoms not working for 2D structures yet")
+    return
 
     fig = plt.figure(figsize=(12.8, 9.6))
     ax = fig.add_subplot(111, projection='3d')
@@ -512,8 +503,6 @@ def checkgpu():
     else:
         print("CUDA is not available or cp is NumPy")
 
-# The wire runs in the X direction and electrons at each grid X,Y,Z 
-# have an x,y,z position that started near nucleus x,y,z
 # Want to know how far the average in each X slice of the wire has moved in the x direction
 # as electrical signal in simulation should be moving in that direction
 def calculate_wire(epositions):
@@ -531,35 +520,69 @@ def calculate_wire(epositions):
     return(averaged_xdiff.get())    # make Numpy for visualization that runs on CPU
 
 
-def calculate_histogram(epositions):
-    global initial_spacing
-    
-    # Get x positions 
-    x_positions = epositions[:,:,:,0].flatten()
-    
+
+#  Use CuPy to make a histogram of how many electrons are currently in each slice of the wire
+def calculate_histogram_positions(epositions):
+    global initial_spacing, gridx
+
+    # Get x positions directly from the 2D array (all rows, 0th column for x)
+    x_positions = epositions[:, 0]
+
     # Convert positions to segment indices
     segment_indices = cp.floor(x_positions / initial_spacing).astype(cp.int32)
 
     # Calculate histogram
     histogram, _ = cp.histogram(segment_indices, bins=cp.arange(-0.5, gridx + 0.5, 1))
 
-    # Convert the histogram to a NumPy array for visualization
-    histogram = histogram.get()
-
-    return histogram
+    return histogram.get()    # return in Numby not cupy
 
 
-def visualize_wire(averaged_xdiff, step, t):
+
+#  Use CuPy to get average drift velocity of electrons in each slice of the wire
+def calculate_drift_velocities(epositions, evelocities):
+    global initial_spacing, gridx
+    
+    # Get x positions and x velocities directly from the 2D arrays
+    x_positions = epositions[:, 0]       # x component of positions for each electron
+    x_velocities = evelocities[:, 0]     # x component of velocity for each electron
+
+    # Convert positions to segment indices
+    segment_indices = cp.floor(x_positions / initial_spacing).astype(cp.int32)
+
+    # Initialize an array to store the sum of velocities in each segment
+    velocity_sums = cp.zeros(gridx, dtype=cp.float32)
+    
+    # Initialize an array to count the number of electrons in each segment
+    electron_counts = cp.zeros(gridx, dtype=cp.int32)
+    
+    # Use bincount to sum velocities and count electrons in each segment
+    velocity_sums = cp.bincount(segment_indices, weights=x_velocities, minlength=gridx)
+    electron_counts = cp.bincount(segment_indices, minlength=gridx)
+    
+    # To avoid division by zero, replace zeros in electron_counts with ones (or use np.where to handle zeros)
+    electron_counts = cp.where(electron_counts == 0, 1, electron_counts)
+    
+    # Calculate average velocities
+    average_velocities = velocity_sums / electron_counts
+
+    return average_velocities.get()  # Return in NumPy not CuPy
+
+
+
+
+
+
+def visualize_wire(histogram, step, t):
     # Plotting
     fig, ax = plt.subplots(figsize=(12.8, 9.6))
 
     #  Want to plot only betweew wire_start and wire_stop
     # ax.plot(range(wire_start, wire_stop), averaged_xdiff[wire_start:wire_stop], marker='o')
-    ax.plot(range(0, len(averaged_xdiff)), averaged_xdiff, marker='o')
+    ax.plot(range(0, len(histogram)), histogram, marker='o')
 
 
     ax.set_xlabel('X index')
-    ax.set_ylabel('Average X Difference')
+    ax.set_ylabel('Histogram')
     ax.set_title(f'Step {step} Time: {t:.8e} sec {sim_settings}')
     ax.grid(True)
 
@@ -573,66 +596,64 @@ def visualize_wire(averaged_xdiff, step, t):
 def calculate_forces_all():
     global electron_positions, forces, coulombs_constant, electron_charge
 
-    # Calculate pairwise differences in position (broadcasting)
-    delta_r = electron_positions[:, cp.newaxis, :] - electron_positions[cp.newaxis, :, :]
+    # Number of electrons
+    n_electrons = electron_positions.shape[0]
 
+    # Expand electron_positions to calculate pairwise differences (broadcasting)
+    delta_r = electron_positions[:, None, :] - electron_positions[None, :, :]
+    
     # Calculate distances and handle division by zero
-    distances = cp.linalg.norm(delta_r, axis=-1)
-    distances[cp.eye(distances.shape[0], dtype=bool)] = cp.inf
-
+    distances = cp.linalg.norm(delta_r, axis=2)
+    cp.fill_diagonal(distances, cp.inf)  # Avoid division by zero for self-interactions
+    
     # Calculate forces (Coulomb's Law)
     force_magnitude = coulombs_constant * (electron_charge ** 2) / distances**2
-
+    
     # Normalize force vectors and multiply by magnitude
-    normforces = force_magnitude[..., cp.newaxis] * delta_r / distances[..., cp.newaxis]
-
-    print("Mean force magnitude:", cp.mean(cp.linalg.norm(normforces, axis=1)))
-    print("Max force magnitude:", cp.max(cp.linalg.norm(normforces, axis=1)))
-
+    unit_vectors = delta_r / distances[:, :, None]  # Add new axis for broadcasting
+    normforces = force_magnitude[:, :, None] * unit_vectors
+    
     # Sum forces from all other electrons for each electron
-    forces=cp.sum(normforces, axis=1)
+    forces = cp.sum(normforces, axis=1)
+
+    # Diagnostic output
+    mean_force_magnitude = cp.mean(cp.linalg.norm(forces, axis=1))
+    max_force_magnitude = cp.max(cp.linalg.norm(forces, axis=1))
+    print("Mean force magnitude:", mean_force_magnitude)
+    print("Max force magnitude:", max_force_magnitude)
 
 
 
 def update_pv(dt):
-    global electron_velocities, electron_positions, bounds, forces, electron_mass, visualize_start, visualize_stop
+    global electron_velocities, electron_positions, bounds, forces, effective_electron_mass
 
-    # acceleration based ono F=ma
+    # Calculate acceleration based on F=ma
     acceleration = forces / effective_electron_mass
 
     # Update velocities
-    new_velocities = electron_velocities + acceleration * dt
+    electron_velocities += acceleration * dt
 
     # Update positions using vectors
-    new_positions = electron_positions + new_velocities * dt
+    electron_positions += electron_velocities * dt
 
+    # Keep positions and velocities within bounds
+    for dim in range(3):  # Iterate over x, y, z dimensions
+        # Check and apply upper boundary conditions
+        over_max = electron_positions[:, dim] > bounds[dim][1]
+        electron_positions[over_max, dim] = bounds[dim][1]  # Set to max bound
+        electron_velocities[over_max, dim] *= -1  # Reverse velocity
 
-    # Create a mask for X indices that should be updated
-    # Generate an array representing the X indices
-    x_indices = cp.arange(gridx).reshape(gridx, 1, 1, 1)  # Reshape for broadcasting
-    # Create a boolean mask where True indicates the indices to be updated
-    # We only update the same part we are visualizing 
-    update_mask = (x_indices >= sim_start) & (x_indices < sim_stop)
-    # update_mask = x_indices > -1 
+        # Check and apply lower boundary conditions
+        below_min = electron_positions[:, dim] < bounds[dim][0]
+        electron_positions[below_min, dim] = bounds[dim][0]  # Set to min bound
+        electron_velocities[below_min, dim] *= -1  # Reverse velocity
 
-    # Apply updates using the mask for selective application
-    electron_velocities = cp.where(update_mask, new_velocities, electron_velocities)
-    electron_positions = cp.where(update_mask, new_positions, electron_positions)
+    # Diagnostic output to monitor maximum position and velocity magnitudes
+    max_position_magnitude = cp.max(cp.linalg.norm(electron_positions, axis=1))
+    max_velocity_magnitude = cp.max(cp.linalg.norm(electron_velocities, axis=1))
+    print("Max positions:", max_position_magnitude)
+    print("Max velocity:", max_velocity_magnitude)
 
-    # keep things in bounds
-    for i, (min_bound, max_bound) in enumerate(bounds):
-        # Check for upper boundary
-        over_max = new_positions[..., i] > max_bound
-        electron_positions[..., i][over_max] = max_bound
-        electron_velocities[..., i][over_max] *= -1
-
-        # Check for lower boundary
-        below_min = electron_positions[..., i] < min_bound
-        electron_positions[..., i][below_min] = min_bound
-        electron_velocities[..., i][below_min] *= -1
-
-    print("Max positions:", cp.max(cp.linalg.norm(electron_positions, axis=1)))
-    print("Max velocity:", cp.max(cp.linalg.norm(electron_velocities, axis=1)))
 
 
 def main():
@@ -646,7 +667,7 @@ def main():
 
 
     # Create a LocalCluster with a custom death timeout and then a Client
-    cluster = LocalCluster(n_workers=24, death_timeout='600s')
+    cluster = LocalCluster(n_workers=4, death_timeout='1000s')
     client= Client(cluster)
     futures = []
 
@@ -662,7 +683,8 @@ def main():
         GPUMem()
         if step % WireSteps == 0:
             # WireStatus=calculate_wire(electron_positions)
-            WireStatus=calculate_histogram(electron_positions)
+            # WireStatus=calculate_histogram_positions(electron_positions)
+            WireStatus=calculate_drift_velocities(electron_positions, electron_velocities)
             future = client.submit(visualize_wire, WireStatus, step, t)
             futures.append(future)
         if step % DisplaySteps == 0:
@@ -683,8 +705,8 @@ def main():
         print("Updating position and velocity", t)
         update_pv(dt)
 
-        print("detect and resolve collisions", t)
-        detect_and_resolve_collisions()
+        #print("detect and resolve collisions", t)
+        #detect_and_resolve_collisions()
 
         cp.cuda.Stream.null.synchronize()         # free memory on the GPU
 
