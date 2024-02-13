@@ -90,6 +90,8 @@
 #
 #  In the wire display it may be good to show average movement of each dX in a graph.  Perhaps this will show
 #  a much faster wave than what is probably a and "electron density wave".   Feb 12, 2024
+#
+#  Should make switch to show wire offset/density/velocites   Feb 13, 2024
 
 
 import cupy as cp
@@ -244,14 +246,13 @@ def GPUMem():
 
 GPUMem()
 
-# grid_size is the total number of electrons
-grid_size = gridx * gridy * gridz
-# Initialize positions and velocities as single-dimensional arrays
 #electron_positions = cp.zeros((gridx, gridy, gridz, 3))    # old way
 
+
+# grid_size is the total number of electrons
+grid_size = gridx * gridy * gridz
+# Initialize CuPy/GPU arrays for positions, velocities , and forces as "2D" arrays but really 1D with 3 storage at each index for x,y,z
 electron_positions = cp.zeros((grid_size, 3))
-
-
 electron_velocities = cp.zeros((grid_size, 3))
 forces = cp.zeros((grid_size, 3))
 
@@ -342,12 +343,6 @@ def generate_thermal_velocities(num_electrons, temperature=300):
     return velocities
 
 
-
-    # Optional: Plot a histogram for analysis
-    # plt.hist(speeds)
-    # filename = os.path.join('simulation', f'maxwell.boltzmann.png')
-    # plt.savefig(filename)
-    # plt.close()           # Close the figure to free memory
 
 
 
@@ -505,7 +500,7 @@ def checkgpu():
 
 # Want to know how far the average in each X slice of the wire has moved in the x direction
 # as electrical signal in simulation should be moving in that direction
-def calculate_wire(epositions):
+def calculate_wire_offset(epositions):
     global gridx, gridy, gridz, nucleus_positions
 
     # Calculate the difference in the x-direction
@@ -521,8 +516,8 @@ def calculate_wire(epositions):
 
 
 
-#  Use CuPy to make a histogram of how many electrons are currently in each slice of the wire
-def calculate_histogram_positions(epositions):
+#  Use CuPy to make a histogram to get density of how many electrons are currently in each slice of the wire
+def calcualte_wire_density(epositions):
     global initial_spacing, gridx
 
     # Get x positions directly from the 2D array (all rows, 0th column for x)
@@ -574,13 +569,13 @@ def calculate_drift_velocities(epositions, evelocities):
 
 # Given an array with values we plot it
 #  Can be used for density or average velocity along the wire
-def visualize_wire(ylabel, histogram, step, t):
+def visualize_wire(ylabel, yvalues, step, t):
     # Plotting
     fig, ax = plt.subplots(figsize=(12.8, 9.6))
 
     #  Want to plot only betweew wire_start and wire_stop
     # ax.plot(range(wire_start, wire_stop), averaged_xdiff[wire_start:wire_stop], marker='o')
-    ax.plot(range(0, len(histogram)), histogram, marker='o')
+    ax.plot(range(0, len(yvalues)), yvalues, marker='o')
 
 
     ax.set_xlabel('X index')
@@ -684,8 +679,9 @@ def main():
         print("In main", step)
         GPUMem()
         if step % WireSteps == 0:
-            # WireStatus=calculate_wire(electron_positions)
-            # WireStatus=calculate_histogram_positions(electron_positions)
+            # WireStatus=calculate_wire_offset(electron_positions)
+            # future = client.submit("Offset", visualize_wire, WireStatus, step, t)
+            # WireStatus=calcualte_wire_density(electron_positions)
             # future = client.submit("Density", visualize_wire, WireStatus, step, t)
             WireStatus=calculate_drift_velocities(electron_positions, electron_velocities)
             future = client.submit("Velocity", visualize_wire, WireStatus, step, t)
