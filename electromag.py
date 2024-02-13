@@ -144,7 +144,7 @@ if simnum==2:            #
     gridx = 70           #  could do 1500 before 2D code - here total is 28,000 electrons
     gridy = 20           # 
     gridz = 20           # 
-    speedup = 100        # sort of rushing the simulation time
+    speedup = 5        # sort of rushing the simulation time
     pulse_width=40      # how many planes will be given pulse - we simulate half toward middle of this at each end
     num_steps =  2000    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
 
@@ -211,7 +211,7 @@ initial_radius = 5.29e-11 #  initial electron radius for hydrogen atom - got at 
 pulse_sinwave = False  # True if pulse should be sin wave
 pulsehalf=False    # True to only pulse half the plane
 
-initialize_orbits=True          # can have electrons initialized to moving if True and not moving if False
+initialize_velocities=True          # can have electrons initialized to moving if True and not moving if False
 
 # bounds format is  ((minx,  maxx) , (miny, maxy), (minz, maxz))
 bounds = ((0, gridx*initial_spacing), (0, gridy*initial_spacing), (0, gridz*initial_spacing))
@@ -353,7 +353,7 @@ def generate_thermal_velocities(num_electrons, temperature=300):
 
 def initialize_atoms():
     global initial_radius, electron_velocities, electron_positions
-    global initial_spacing, initialize_orbits, electron_speed, pulse_width, electron_thermal_speed
+    global initial_spacing, initialize_velocities, electron_speed, pulse_width, electron_thermal_speed
 
     grid_size = gridx * gridy * gridz  # Total number of atoms
 
@@ -382,7 +382,7 @@ def initialize_atoms():
     electron_positions = cp.stack((x_flat, y_flat, z_flat), axis=-1)
 
     # Initialize velocities
-    if initialize_orbits:
+    if initialize_velocities:
         electron_velocities = generate_thermal_velocities(grid_size, 300.0)  # Adjusted to generate velocities for all electrons
     else:
         electron_velocities = cp.zeros((grid_size, 3))  # Use the new 2D structure directly
@@ -538,7 +538,8 @@ def calculate_histogram_positions(epositions):
 
 
 
-#  Use CuPy to get average drift velocity of electrons in each slice of the wire
+#  Use CuPy to get average drift velocity of electrons in each slice of the simulated wire
+#  Return as a NumPy array so CPU/Dask output routine can use it
 def calculate_drift_velocities(epositions, evelocities):
     global initial_spacing, gridx
     
@@ -571,8 +572,9 @@ def calculate_drift_velocities(epositions, evelocities):
 
 
 
-
-def visualize_wire(histogram, step, t):
+# Given an array with values we plot it
+#  Can be used for density or average velocity along the wire
+def visualize_wire(ylabel, histogram, step, t):
     # Plotting
     fig, ax = plt.subplots(figsize=(12.8, 9.6))
 
@@ -582,7 +584,7 @@ def visualize_wire(histogram, step, t):
 
 
     ax.set_xlabel('X index')
-    ax.set_ylabel('Histogram')
+    ax.set_ylabel(ylabel)
     ax.set_title(f'Step {step} Time: {t:.8e} sec {sim_settings}')
     ax.grid(True)
 
@@ -684,8 +686,9 @@ def main():
         if step % WireSteps == 0:
             # WireStatus=calculate_wire(electron_positions)
             # WireStatus=calculate_histogram_positions(electron_positions)
+            # future = client.submit("Density", visualize_wire, WireStatus, step, t)
             WireStatus=calculate_drift_velocities(electron_positions, electron_velocities)
-            future = client.submit(visualize_wire, WireStatus, step, t)
+            future = client.submit("Velocity", visualize_wire, WireStatus, step, t)
             futures.append(future)
         if step % DisplaySteps == 0:
             print("Display", step)
