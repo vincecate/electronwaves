@@ -128,7 +128,7 @@ if simnum==0:            #
     gridx = 200          # 
     gridy = 10           # 
     gridz = 10           # 
-    speedup = 20         # sort of rushing the simulation time
+    speedup = 1          # sort of rushing the simulation time
     pulse_width=80       # how many planes will be given pulse - we simulate half toward middle of this at each end
     num_steps =  2000    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
 
