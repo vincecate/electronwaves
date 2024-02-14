@@ -147,7 +147,7 @@ if simnum==2:            #
     gridy = 20           # 
     gridz = 20           # 
     speedup = 5        # sort of rushing the simulation time
-    pulse_width=40      # how many planes will be given pulse - we simulate half toward middle of this at each end
+    pulse_width=20      # how many planes will be given pulse - we simulate half toward middle of this at each end
     num_steps =  2000    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
 
 if simnum==3:            # Ug came out slower when was predicting much faster - might need to run longer to get real speed
@@ -343,45 +343,40 @@ def generate_thermal_velocities(num_electrons, temperature=300):
     return velocities
 
 
-
-
-
-def initialize_atoms():
+# When done with initialize_electrons these two arrays should have this shape
+# electron_positions = cp.zeros((grid_size, 3))
+# electron_velocities = cp.zeros((grid_size, 3))
+def initialize_electrons():
     global initial_radius, electron_velocities, electron_positions
-    global initial_spacing, initialize_velocities, electron_speed, pulse_width, electron_thermal_speed
+    global initial_spacing, initialize_velocities, electron_speed, pulse_width, electron_thermal_speed, gridx, gridy, gridz
 
-    grid_size = gridx * gridy * gridz  # Total number of atoms
+    grid_size = gridx * gridy * gridz  # Total number of positions/electrons
 
-    # Calculate the modified x positions with pulse spacing
-    pulse_spacing = initial_spacing / 2
-    grid_non_pulse = gridx - pulse_width
-    total_space = initial_spacing * gridx
-    rest_space = total_space - pulse_spacing * pulse_width
-    rest_spacing = rest_space / grid_non_pulse
-    half_spacing_x_positions = cp.linspace(0, (pulse_width - 1) * pulse_spacing, pulse_width)
-    full_spacing_start = half_spacing_x_positions[-1] + rest_spacing
-    full_spacing_x_positions = cp.linspace(full_spacing_start, total_space - rest_spacing, gridx - pulse_width)
-    modified_x_positions = cp.concatenate((half_spacing_x_positions, full_spacing_x_positions))
+    # Calculate the adjusted number of electrons for the pulse and rest regions to match the grid_size
+    # Ensure total electrons do not exceed grid_size while maintaining higher density in the pulse region
+    pulse_volume_ratio = pulse_width / gridx
+    adjusted_pulse_electrons = int(grid_size * pulse_volume_ratio * 2)  # Double density in pulse region, adjusted for total grid size
+    rest_electrons = grid_size - adjusted_pulse_electrons
 
-    # Generate y and z positions using initial_spacing, ensuring the entire grid is covered
-    y_positions = cp.arange(gridy) * initial_spacing
-    z_positions = cp.arange(gridz) * initial_spacing
+    # Generate random positions for electrons
+    x_positions = cp.concatenate([
+        cp.random.uniform(0, pulse_width * initial_spacing, adjusted_pulse_electrons),
+        cp.random.uniform(pulse_width * initial_spacing, gridx * initial_spacing, rest_electrons)
+    ])
+    y_positions = cp.random.uniform(0, gridy * initial_spacing, grid_size)
+    z_positions = cp.random.uniform(0, gridz * initial_spacing, grid_size)
 
-    # Create the full 3D grid of positions in a 2D format
-    x_grid, y_grid, z_grid = cp.meshgrid(modified_x_positions, y_positions, z_positions, indexing='ij')
-    x_flat = x_grid.flatten()
-    y_flat = y_grid.flatten()
-    z_flat = z_grid.flatten()
+    # Shuffle the x_positions to mix pulse and rest electrons, maintaining overall distribution
+    cp.random.shuffle(x_positions)
 
-    # Stack x, y, z positions to form the (grid_size, 3) electron_positions array
-    electron_positions = cp.stack((x_flat, y_flat, z_flat), axis=-1)
+    # Stack x, y, z positions to form the electron_positions array
+    electron_positions = cp.stack((x_positions[:grid_size], y_positions, z_positions), axis=-1)
 
     # Initialize velocities
     if initialize_velocities:
-        electron_velocities = generate_thermal_velocities(grid_size, 300.0)  # Adjusted to generate velocities for all electrons
+        electron_velocities = generate_thermal_velocities(grid_size, electron_thermal_speed)
     else:
-        electron_velocities = cp.zeros((grid_size, 3))  # Use the new 2D structure directly
-
+        electron_velocities = cp.zeros((grid_size, 3))
 
 
 
@@ -659,7 +654,7 @@ def main():
     print("In main")
     checkgpu()
     GPUMem()
-    initialize_atoms()
+    initialize_electrons()
     os.makedirs('simulation', exist_ok=True) # Ensure the simulation directory exists
 
 
@@ -680,11 +675,11 @@ def main():
         GPUMem()
         if step % WireSteps == 0:
             # WireStatus=calculate_wire_offset(electron_positions)
-            # future = client.submit("Offset", visualize_wire, WireStatus, step, t)
-            # WireStatus=calcualte_wire_density(electron_positions)
-            # future = client.submit("Density", visualize_wire, WireStatus, step, t)
-            WireStatus=calculate_drift_velocities(electron_positions, electron_velocities)
-            future = client.submit("Velocity", visualize_wire, WireStatus, step, t)
+            # future = client.submit(visualize_wire, "Offset",  WireStatus, step, t)
+            WireStatus=calcualte_wire_density(electron_positions)
+            future = client.submit(visualize_wire, "Density", WireStatus, step, t)
+            #WireStatus=calculate_drift_velocities(electron_positions, electron_velocities)
+            #future = client.submit(visualize_wire, "Velocity", WireStatus, step, t)
             futures.append(future)
         if step % DisplaySteps == 0:
             print("Display", step)
