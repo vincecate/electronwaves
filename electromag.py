@@ -126,20 +126,12 @@ electron_thermal_speed = 1.1e6            # meters per second
 bounce_distance = 1e-10                   # closer than this and we make electrons bounce off each other
 
 # Making wider wires have deeper pulses so scaling is 3D to give better estimate for real wire extrapolation
-if simnum==0:            # 
+if simnum==1:            # 
     gridx = 200          # 
     gridy = 10           # 
     gridz = 10           # 
-    speedup = 1          # sort of rushing the simulation time
-    pulse_width=80       # how many planes will be given pulse - we simulate half toward middle of this at each end
-    num_steps =  2000    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
-
-if simnum==1:            # 
-    gridx = 2000          # 
-    gridy = 10           # 
-    gridz = 10           # 
-    speedup = 300        # sort of rushing the simulation time
-    pulse_width=800       # how many planes will be given pulse - we simulate half toward middle of this at each end
+    speedup = 1         # sort of rushing the simulation time
+    pulse_width=40       # how many planes will be given pulse - we simulate half toward middle of this at each end
     num_steps =  5000    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
 
 if simnum==2:            # 
@@ -154,8 +146,8 @@ if simnum==3:            # Ug came out slower when was predicting much faster - 
     gridx = 30           # 
     gridy = 30           # 
     gridz = 30           # 
-    speedup = 300        # sort of rushing the simulation time
-    pulse_width=20      # how many planes will be given pulse - we simulate half toward middle of this at each end
+    speedup = 3        # sort of rushing the simulation time
+    pulse_width=15      # how many planes will be given pulse - we simulate half toward middle of this at each end
     num_steps =  2000    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
 
 
