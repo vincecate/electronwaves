@@ -130,7 +130,7 @@ if simnum==1:            #
     gridx = 200          # 
     gridy = 10           # 
     gridz = 10           # 
-    speedup = 1         # sort of rushing the simulation time
+    speedup = 30         # sort of rushing the simulation time
     pulse_width=40       # how many planes will be given pulse - we simulate half toward middle of this at each end
     num_steps =  5000    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
 
@@ -138,7 +138,7 @@ if simnum==2:            #
     gridx = 70           #  could do 1500 before 2D code - here total is 28,000 electrons
     gridy = 20           # 
     gridz = 20           # 
-    speedup = 5        # sort of rushing the simulation time
+    speedup =  30       # sort of rushing the simulation time
     pulse_width=20      # how many planes will be given pulse - we simulate half toward middle of this at each end
     num_steps =  2000    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
 
@@ -146,7 +146,7 @@ if simnum==3:            # Ug came out slower when was predicting much faster - 
     gridx = 30           # 
     gridy = 30           # 
     gridz = 30           # 
-    speedup = 3        # sort of rushing the simulation time
+    speedup = 30        # sort of rushing the simulation time
     pulse_width=15      # how many planes will be given pulse - we simulate half toward middle of this at each end
     num_steps =  2000    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
 
