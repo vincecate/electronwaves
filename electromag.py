@@ -152,11 +152,11 @@ if simnum==3:            # Ug came out slower when was predicting much faster - 
 
 
 if simnum==4:            #
-    gridx = 400          # 
-    gridy = 80           # 
-    gridz = 80           # 
-    speedup = 300        # sort of rushing the simulation time
-    pulse_width=200      # how many planes will be given pulse - we simulate half toward middle of this at each end
+    gridx = 100          # 
+    gridy = 50           # 
+    gridz = 50           # 
+    speedup = 30         # sort of rushing the simulation time
+    pulse_width=40      # how many planes will be given pulse - we simulate half toward middle of this at each end
     num_steps =  2000    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
 
 if simnum==5:            #
@@ -205,11 +205,10 @@ initial_radius = 5.29e-11 #  initial electron radius for hydrogen atom - got at 
 pulse_sinwave = False  # True if pulse should be sin wave
 pulsehalf=False    # True to only pulse half the plane
 
-initialize_velocities=True          # can have electrons initialized to moving if True and not moving if False
+initialize_velocities=False          # can have electrons initialized to moving if True and not moving if False
 
 # bounds format is  ((minx,  maxx) , (miny, maxy), (minz, maxz))
 bounds = ((0, gridx*initial_spacing), (0, gridy*initial_spacing), (0, gridz*initial_spacing))
-# bounds = ((-1.0*initial_spacing, (gridx+1.0)*initial_spacing), (-1.0*initial_spacing, (gridy+1.0)*initial_spacing), (-1.0*initial_spacing, (gridz+1.0)*initial_spacing))
 
 # Time stepping
 visualize_start= int(pulse_width/3) # have initial pulse electrons we don't really want to see 
@@ -340,15 +339,13 @@ def generate_thermal_velocities(num_electrons, temperature=300):
 # electron_positions = cp.zeros((num_electrons, 3))
 # electron_velocities = cp.zeros((num_electrons, 3))
 def initialize_electrons():
-    global initial_radius, electron_velocities, electron_positions
+    global initial_radius, electron_velocities, electron_positions, num_electrons
     global initial_spacing, initialize_velocities, electron_speed, pulse_width, electron_thermal_speed, gridx, gridy, gridz
-
-    num_electrons = gridx * gridy * gridz  # Total number of positions/electrons
 
     # Calculate the adjusted number of electrons for the pulse and rest regions to match the num_electrons
     # Ensure total electrons do not exceed num_electrons while maintaining higher density in the pulse region
     pulse_volume_ratio = pulse_width / gridx
-    adjusted_pulse_electrons = int(num_electrons * pulse_volume_ratio * 2)  # Double density in pulse region, adjusted for total grid size
+    adjusted_pulse_electrons = int(num_electrons * pulse_volume_ratio * 2)  # Double density in pulse region
     rest_electrons = num_electrons - adjusted_pulse_electrons
 
     # Generate random positions for electrons
@@ -577,37 +574,46 @@ def visualize_wire(ylabel, yvalues, step, t):
     plt.close(fig)  # Close the figure to free memory
 
 
-
 def calculate_forces_chunked():
     global electron_positions, forces, coulombs_constant, electron_charge, num_electrons, chunk_size
     # Reset forces to zero
     forces.fill(0)
+
+    # Pre-allocate memory for the largest possible chunk forces, r_squared, and r_unit
+    max_chunk_forces = cp.zeros((chunk_size, num_electrons, 3))
+    max_r_squared = cp.zeros((chunk_size, num_electrons))  # Pre-allocated memory for r_squared
+    max_r_unit = cp.zeros((chunk_size, num_electrons, 3))
 
     # Process the electron positions in chunks to manage GPU memory usage
     for start_idx in range(0, num_electrons, chunk_size):
         end_idx = min(start_idx + chunk_size, num_electrons)
         chunk_positions = electron_positions[start_idx:end_idx]
 
+        # Determine the current chunk size for correct indexing into pre-allocated arrays
+        current_chunk_size = end_idx - start_idx
+
         # Calculate the vector differences between positions in the chunk and all positions
         r_ij = chunk_positions[:, None, :] - electron_positions[None, :, :]
 
         # Compute squared distances, adding a small epsilon to avoid division by zero
         epsilon = 1e-20
-        r_squared = cp.sum(r_ij ** 2, axis=2) + epsilon
+        max_r_squared[:current_chunk_size] = cp.sum(r_ij ** 2, axis=2) + epsilon  # Use of pre-allocated array
 
-        # Apply Coulomb's law: F = k * q^2 / r^2, but here calculating the force magnitude directly
-        force_magnitudes = coulombs_constant * (electron_charge ** 2) / r_squared
+        # Apply Coulomb's law: F = k * q^2 / r^2, calculating the force magnitude directly
+        force_magnitudes = coulombs_constant * (electron_charge ** 2) / max_r_squared[:current_chunk_size]
 
         # Calculate the unit vectors for direction
-        r_unit = r_ij / cp.sqrt(r_squared)[:, :, None]
+        max_r_unit[:current_chunk_size] = r_ij / cp.sqrt(max_r_squared[:current_chunk_size])[:, :, None]
 
-        # Calculate forces for the chunk and sum them up
-        chunk_forces = force_magnitudes[:, :, None] * r_unit
+        # Update chunk_forces for the current chunk using pre-allocated memory
+        max_chunk_forces[:current_chunk_size] = force_magnitudes[:, :, None] * max_r_unit[:current_chunk_size]
 
-        # Since we're accumulating forces, we sum along the axis=1 (summing forces from all other electrons)
-        forces[start_idx:end_idx] += cp.sum(chunk_forces, axis=1)
+        # Sum forces for the current chunk and add to the total forces
+        forces[start_idx:end_idx] += cp.sum(max_chunk_forces[:current_chunk_size], axis=1)
 
-    # After the loop, forces will contain the cumulative forces acting on each electron due to all others
+    # After the loop, 'forces' will contain the cumulative forces acting on each electron due to all others
+
+
 
 
 def calculate_forces_all():
@@ -656,12 +662,12 @@ def update_pv(dt):
     # Keep positions and velocities within bounds
     for dim in range(3):  # Iterate over x, y, z dimensions
         # Check and apply upper boundary conditions
-        over_max = electron_positions[:, dim] > bounds[dim][1]
+        over_max = electron_positions[:, dim] > bounds[dim][1]   # 1 holds max
         electron_positions[over_max, dim] = bounds[dim][1]  # Set to max bound
         electron_velocities[over_max, dim] *= -1  # Reverse velocity
 
         # Check and apply lower boundary conditions
-        below_min = electron_positions[:, dim] < bounds[dim][0]
+        below_min = electron_positions[:, dim] < bounds[dim][0]  # 0 holds min
         electron_positions[below_min, dim] = bounds[dim][0]  # Set to min bound
         electron_velocities[below_min, dim] *= -1  # Reverse velocity
 
@@ -677,6 +683,10 @@ def main():
     global gridx, gridy, gridz, initial_spacing, num_steps, speedup, forces, electron_positions, electron_velocities, dt
 
     print("In main")
+    if (pulse_width > gridx/2):
+        print("pulse_width has to be less than half of gridx")
+        exit(-1)
+
     checkgpu()
     GPUMem()
     initialize_electrons()
