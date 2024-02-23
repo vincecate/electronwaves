@@ -241,12 +241,13 @@ GPUMem()
 #electron_positions = cp.zeros((gridx, gridy, gridz, 3))    # old way
 
 
-# grid_size is the total number of electrons
-grid_size = gridx * gridy * gridz
+# num_electrons is the total number of electrons
+num_electrons = gridx * gridy * gridz
+chunk_size = gridx*gridy
 # Initialize CuPy/GPU arrays for positions, velocities , and forces as "2D" arrays but really 1D with 3 storage at each index for x,y,z
-electron_positions = cp.zeros((grid_size, 3))
-electron_velocities = cp.zeros((grid_size, 3))
-forces = cp.zeros((grid_size, 3))
+electron_positions = cp.zeros((num_electrons, 3))
+electron_velocities = cp.zeros((num_electrons, 3))
+forces = cp.zeros((num_electrons, 3))
 
 
 def calculate_collision_velocity(v1, v2, p1, p2):
@@ -336,39 +337,39 @@ def generate_thermal_velocities(num_electrons, temperature=300):
 
 
 # When done with initialize_electrons these two arrays should have this shape
-# electron_positions = cp.zeros((grid_size, 3))
-# electron_velocities = cp.zeros((grid_size, 3))
+# electron_positions = cp.zeros((num_electrons, 3))
+# electron_velocities = cp.zeros((num_electrons, 3))
 def initialize_electrons():
     global initial_radius, electron_velocities, electron_positions
     global initial_spacing, initialize_velocities, electron_speed, pulse_width, electron_thermal_speed, gridx, gridy, gridz
 
-    grid_size = gridx * gridy * gridz  # Total number of positions/electrons
+    num_electrons = gridx * gridy * gridz  # Total number of positions/electrons
 
-    # Calculate the adjusted number of electrons for the pulse and rest regions to match the grid_size
-    # Ensure total electrons do not exceed grid_size while maintaining higher density in the pulse region
+    # Calculate the adjusted number of electrons for the pulse and rest regions to match the num_electrons
+    # Ensure total electrons do not exceed num_electrons while maintaining higher density in the pulse region
     pulse_volume_ratio = pulse_width / gridx
-    adjusted_pulse_electrons = int(grid_size * pulse_volume_ratio * 2)  # Double density in pulse region, adjusted for total grid size
-    rest_electrons = grid_size - adjusted_pulse_electrons
+    adjusted_pulse_electrons = int(num_electrons * pulse_volume_ratio * 2)  # Double density in pulse region, adjusted for total grid size
+    rest_electrons = num_electrons - adjusted_pulse_electrons
 
     # Generate random positions for electrons
     x_positions = cp.concatenate([
         cp.random.uniform(0, pulse_width * initial_spacing, adjusted_pulse_electrons),
         cp.random.uniform(pulse_width * initial_spacing, gridx * initial_spacing, rest_electrons)
     ])
-    y_positions = cp.random.uniform(0, gridy * initial_spacing, grid_size)
-    z_positions = cp.random.uniform(0, gridz * initial_spacing, grid_size)
+    y_positions = cp.random.uniform(0, gridy * initial_spacing, num_electrons)
+    z_positions = cp.random.uniform(0, gridz * initial_spacing, num_electrons)
 
     # Shuffle the x_positions to mix pulse and rest electrons, maintaining overall distribution
     cp.random.shuffle(x_positions)
 
     # Stack x, y, z positions to form the electron_positions array
-    electron_positions = cp.stack((x_positions[:grid_size], y_positions, z_positions), axis=-1)
+    electron_positions = cp.stack((x_positions[:num_electrons], y_positions, z_positions), axis=-1)
 
     # Initialize velocities
     if initialize_velocities:
-        electron_velocities = generate_thermal_velocities(grid_size, electron_thermal_speed)
+        electron_velocities = generate_thermal_velocities(num_electrons, electron_thermal_speed)
     else:
-        electron_velocities = cp.zeros((grid_size, 3))
+        electron_velocities = cp.zeros((num_electrons, 3))
 
 
 
@@ -577,6 +578,38 @@ def visualize_wire(ylabel, yvalues, step, t):
 
 
 
+def calculate_forces_chunked():
+    global electron_positions, forces, coulombs_constant, electron_charge, num_electrons, chunk_size
+    # Reset forces to zero
+    forces.fill(0)
+
+    # Process the electron positions in chunks to manage GPU memory usage
+    for start_idx in range(0, num_electrons, chunk_size):
+        end_idx = min(start_idx + chunk_size, num_electrons)
+        chunk_positions = electron_positions[start_idx:end_idx]
+
+        # Calculate the vector differences between positions in the chunk and all positions
+        r_ij = chunk_positions[:, None, :] - electron_positions[None, :, :]
+
+        # Compute squared distances, adding a small epsilon to avoid division by zero
+        epsilon = 1e-20
+        r_squared = cp.sum(r_ij ** 2, axis=2) + epsilon
+
+        # Apply Coulomb's law: F = k * q^2 / r^2, but here calculating the force magnitude directly
+        force_magnitudes = coulombs_constant * (electron_charge ** 2) / r_squared
+
+        # Calculate the unit vectors for direction
+        r_unit = r_ij / cp.sqrt(r_squared)[:, :, None]
+
+        # Calculate forces for the chunk and sum them up
+        chunk_forces = force_magnitudes[:, :, None] * r_unit
+
+        # Since we're accumulating forces, we sum along the axis=1 (summing forces from all other electrons)
+        forces[start_idx:end_idx] += cp.sum(chunk_forces, axis=1)
+
+    # After the loop, forces will contain the cumulative forces acting on each electron due to all others
+
+
 def calculate_forces_all():
     global electron_positions, forces, coulombs_constant, electron_charge
 
@@ -680,12 +713,12 @@ def main():
             future = client.submit(visualize_atoms, copypositions, copyvelocities, step, t)
             futures.append(future)
 
-        #print("Updating force chunked", step)
-        #calculate_forces_chunked()
+        print("Updating force chunked", step)
+        calculate_forces_chunked()
         #print("Updating force nearby", step)
         #calculate_forces_nearby()
-        print("Updating force all", step)
-        calculate_forces_all()
+        #print("Updating force all", step)
+        #calculate_forces_all()
         GPUMem()
 
         print("Updating position and velocity", t)
