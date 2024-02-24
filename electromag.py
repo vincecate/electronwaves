@@ -143,11 +143,11 @@ if simnum==2:            #
     num_steps =  2000    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
 
 if simnum==3:            # Ug came out slower when was predicting much faster - might need to run longer to get real speed
-    gridx = 30           # 
+    gridx = 70           # 
     gridy = 30           # 
     gridz = 30           # 
-    speedup = 30        # sort of rushing the simulation time
-    pulse_width=15      # how many planes will be given pulse - we simulate half toward middle of this at each end
+    speedup = 50        # sort of rushing the simulation time
+    pulse_width=30      # how many planes will be given pulse - we simulate half toward middle of this at each end
     num_steps =  2000    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
 
 
