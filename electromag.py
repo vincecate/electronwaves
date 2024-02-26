@@ -577,8 +577,9 @@ def visualize_wire(ylabel, yvalues, step, t):
 
 
 
-import cupy as cp
-
+# Because the vector operations were using memory for all pairs of electrons we have
+#  broken it down into chunks to limit this memory usage problem.
+# After this 'forces' will contain the cumulative forces acting on each electron due to all
 def calculate_forces_chunked():
     global electron_positions, electron_velocities, forces, coulombs_constant, electron_charge, num_electrons, chunk_size, speed_of_light
     # Reset forces to zero
@@ -618,22 +619,34 @@ def calculate_forces_chunked():
         r_ij_retarded = chunk_positions[:, None, :] - retarded_positions
         r_squared_retarded = cp.sum(r_ij_retarded ** 2, axis=2) + epsilon
 
-        # Apply Coulomb's law with retarded positions
-        force_magnitudes = coulombs_constant * (electron_charge ** 2) / r_squared_retarded
+        # Calculate unit vector for retarded positions
         r_unit_retarded = r_ij_retarded / cp.sqrt(r_squared_retarded)[:, :, None]
 
-        # Update chunk forces using retarded positions
-        max_chunk_forces[:current_chunk_size] = force_magnitudes[:, :, None] * r_unit_retarded
+        # Calculate relative velocity direction (towards or away)
+        relative_velocity_direction = cp.sum(v_ij * r_unit_retarded, axis=2)
+
+        # Calculate adjustment factor based on relative speed and direction
+        adjustment_factor = 1 + (relative_velocity_direction / speed_of_light)
+
+        # Adjust force magnitudes based on direction
+        force_magnitudes = coulombs_constant * (electron_charge ** 2) / r_squared_retarded * adjustment_factor
+
+        # Ensure force_magnitudes is broadcastable to the shape of r_unit_retarded
+        # by adding a new axis to force_magnitudes, making it (2100, 63000, 1)
+        # This allows for element-wise multiplication with r_unit_retarded (2100, 63000, 3)
+        force_magnitudes_expanded = force_magnitudes[:, :, None]  # Add an extra dimension
+
+        # Now perform the multiplication
+        max_chunk_forces[:current_chunk_size] = force_magnitudes_expanded * r_unit_retarded
 
         # Sum forces for the current chunk and add to the total forces
         forces[start_idx:end_idx] += cp.sum(max_chunk_forces[:current_chunk_size], axis=1)
 
-    # After the loop, 'forces' will contain the cumulative forces acting on each electron due to all
 
 
-
-
-
+#  These vector operations use storage scaling with the number of pairs of electorns, which is huge
+#  It seems there should be a way to just sum of the forces from all other electrons without 
+#   needing memory for all pairs of electrons but I don't have that figured out yet.
 def calculate_forces_all():
     global electron_positions, forces, coulombs_constant, electron_charge
 
