@@ -99,6 +99,7 @@ import numpy as np   # numpy as np for CPU and now just for visualization
 import matplotlib.pyplot as plt
 from matplotlib.ticker import ScalarFormatter
 from scipy.constants import e, epsilon_0, electron_mass, elementary_charge, c    
+speed_of_light = c
 electron_charge=elementary_charge
 coulombs_constant = 8.9875517873681764e9  # Coulomb's constant
 
@@ -146,17 +147,17 @@ if simnum==3:            # Ug came out slower when was predicting much faster - 
     gridx = 70           # 
     gridy = 30           # 
     gridz = 30           # 
-    speedup = 50        # sort of rushing the simulation time
-    pulse_width=30      # how many planes will be given pulse - we simulate half toward middle of this at each end
-    num_steps =  2000    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
+    speedup = 100        # sort of rushing the simulation time
+    pulse_width=30       # how many planes will be given pulse - we simulate half toward middle of this at each end
+    num_steps =  4000    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
 
 
 if simnum==4:            #
-    gridx = 100          # 
-    gridy = 50           # 
-    gridz = 50           # 
-    speedup = 30         # sort of rushing the simulation time
-    pulse_width=40      # how many planes will be given pulse - we simulate half toward middle of this at each end
+    gridx = 70           # 
+    gridy = 40           # 
+    gridz = 40           # 
+    speedup = 50         # sort of rushing the simulation time
+    pulse_width=30      # how many planes will be given pulse - we simulate half toward middle of this at each end
     num_steps =  2000    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
 
 if simnum==5:            #
@@ -574,44 +575,61 @@ def visualize_wire(ylabel, yvalues, step, t):
     plt.close(fig)  # Close the figure to free memory
 
 
+
+
+import cupy as cp
+
 def calculate_forces_chunked():
-    global electron_positions, forces, coulombs_constant, electron_charge, num_electrons, chunk_size
+    global electron_positions, electron_velocities, forces, coulombs_constant, electron_charge, num_electrons, chunk_size, speed_of_light
     # Reset forces to zero
     forces.fill(0)
 
-    # Pre-allocate memory for the largest possible chunk forces, r_squared, and r_unit
-    max_chunk_forces = cp.zeros((chunk_size, num_electrons, 3))
-    max_r_squared = cp.zeros((chunk_size, num_electrons))  # Pre-allocated memory for r_squared
-    max_r_unit = cp.zeros((chunk_size, num_electrons, 3))
+    # Constants
+    epsilon = 1e-20  # Small number to avoid division by zero
 
-    # Process the electron positions in chunks to manage GPU memory usage
+    # Pre-allocate memory for the largest possible chunk forces, r_squared, r_unit, and time delays
+    max_chunk_forces = cp.zeros((chunk_size, num_electrons, 3))
+    max_r_squared = cp.zeros((chunk_size, num_electrons))
+    max_r_unit = cp.zeros((chunk_size, num_electrons, 3))
+    time_delays = cp.zeros((chunk_size, num_electrons))
+
     for start_idx in range(0, num_electrons, chunk_size):
         end_idx = min(start_idx + chunk_size, num_electrons)
         chunk_positions = electron_positions[start_idx:end_idx]
+        chunk_velocities = electron_velocities[start_idx:end_idx]
 
-        # Determine the current chunk size for correct indexing into pre-allocated arrays
         current_chunk_size = end_idx - start_idx
 
         # Calculate the vector differences between positions in the chunk and all positions
         r_ij = chunk_positions[:, None, :] - electron_positions[None, :, :]
+        v_ij = chunk_velocities[:, None, :] - electron_velocities[None, :, :]
 
-        # Compute squared distances, adding a small epsilon to avoid division by zero
-        epsilon = 1e-20
-        max_r_squared[:current_chunk_size] = cp.sum(r_ij ** 2, axis=2) + epsilon  # Use of pre-allocated array
+        # Compute squared distances
+        r_squared = cp.sum(r_ij ** 2, axis=2) + epsilon
+        max_r_squared[:current_chunk_size] = r_squared
 
-        # Apply Coulomb's law: F = k * q^2 / r^2, calculating the force magnitude directly
-        force_magnitudes = coulombs_constant * (electron_charge ** 2) / max_r_squared[:current_chunk_size]
+        # Estimate time delays based on separation distance and speed of light
+        time_delays[:current_chunk_size] = cp.sqrt(r_squared) / speed_of_light
 
-        # Calculate the unit vectors for direction
-        max_r_unit[:current_chunk_size] = r_ij / cp.sqrt(max_r_squared[:current_chunk_size])[:, :, None]
+        # Estimate the retarded positions based on time delays and relative velocities
+        retarded_positions = electron_positions[None, :, :] - v_ij * time_delays[:current_chunk_size, :, None]
 
-        # Update chunk_forces for the current chunk using pre-allocated memory
-        max_chunk_forces[:current_chunk_size] = force_magnitudes[:, :, None] * max_r_unit[:current_chunk_size]
+        # Recalculate vector differences using retarded positions
+        r_ij_retarded = chunk_positions[:, None, :] - retarded_positions
+        r_squared_retarded = cp.sum(r_ij_retarded ** 2, axis=2) + epsilon
+
+        # Apply Coulomb's law with retarded positions
+        force_magnitudes = coulombs_constant * (electron_charge ** 2) / r_squared_retarded
+        r_unit_retarded = r_ij_retarded / cp.sqrt(r_squared_retarded)[:, :, None]
+
+        # Update chunk forces using retarded positions
+        max_chunk_forces[:current_chunk_size] = force_magnitudes[:, :, None] * r_unit_retarded
 
         # Sum forces for the current chunk and add to the total forces
         forces[start_idx:end_idx] += cp.sum(max_chunk_forces[:current_chunk_size], axis=1)
 
-    # After the loop, 'forces' will contain the cumulative forces acting on each electron due to all others
+    # After the loop, 'forces' will contain the cumulative forces acting on each electron due to all
+
 
 
 
