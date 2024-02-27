@@ -625,11 +625,11 @@ def calculate_forces_chunked():
         # Calculate relative velocity direction (towards or away)
         relative_velocity_direction = cp.sum(v_ij * r_unit_retarded, axis=2)
 
-        # Calculate adjustment factor based on relative speed and direction
-        adjustment_factor = 1 + (relative_velocity_direction / speed_of_light)
+        # Calculate adjustment factor based on relative speed and direction  - approaching velocity is negative so need to negate
+        adjustment_factor = 1 - (relative_velocity_direction / speed_of_light)
 
         # Adjust force magnitudes based on direction
-        force_magnitudes = coulombs_constant * (electron_charge ** 2) / r_squared_retarded * adjustment_factor
+        force_magnitudes = adjustment_factor * coulombs_constant * (electron_charge ** 2) / r_squared_retarded 
 
         # Ensure force_magnitudes is broadcastable to the shape of r_unit_retarded
         # by adding a new axis to force_magnitudes, making it (2100, 63000, 1)
