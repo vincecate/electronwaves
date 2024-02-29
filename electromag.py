@@ -6,6 +6,7 @@
 # pip install scipy
 # pip install dask
 # pip install distributed
+# pip install pycuda
 #
 #  We want to simulate an input wave and see if it can propagate through 
 #  electons in hydrogen gas.
@@ -102,6 +103,7 @@ from scipy.constants import e, epsilon_0, electron_mass, elementary_charge, c
 speed_of_light = c
 electron_charge=elementary_charge
 coulombs_constant = 8.9875517873681764e9  # Coulomb's constant
+#coulombs_constant = 1 / (4 * cp.pi * epsilon_0)  # Coulomb's constant 
 
 import dask
 from dask import delayed
@@ -109,6 +111,7 @@ from dask.distributed import Client, wait, LocalCluster
 import multiprocessing
 import os
 import sys
+import math
 
 # Check if at least one argument is provided (excluding the script name)
 if len(sys.argv) > 1:
@@ -161,11 +164,11 @@ if simnum==4:            #
     num_steps =  2000    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
 
 if simnum==5:            #
-    gridx = 160          # 
-    gridy = 160          # 
-    gridz = 160          # 
-    speedup = 300        # sort of rushing the simulation time
-    pulse_width=160      # Really want twice this but may be able to learn something with this.  
+    gridx = 80          # 
+    gridy = 35          # 
+    gridz = 35          # 
+    speedup = 200        # sort of rushing the simulation time
+    pulse_width=35      # Really want twice this but may be able to learn something with this.  
     num_steps =  2000    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
 
 DisplaySteps = 5000  # every so many simulation steps we call the visualize code
@@ -224,7 +227,6 @@ max_neighbor_grids=50      # maximum up or down the X direction that we calculat
 proprange=visualize_stop-visualize_start # not simulating either end of the wire so only middle range for signal to propagage
 dt = speedup*proprange*initial_spacing/c/num_steps  # would like total simulation time to be long enough for light wave to just cross grid 
 
-coulombs_constant = 1 / (4 * cp.pi * epsilon_0)  # Coulomb's constant 
 
 # Make string of some settings to put on output graph 
 sim_settings = f"simnum {simnum} gridx {gridx} gridy {gridy} gridz {gridz} speedup {speedup} \n Spacing: {initial_spacing:.8e} Pulse Width {pulse_width} ElcSpeed {electron_thermal_speed:.8e} Steps: {num_steps} dt: {dt:.8e}"
@@ -678,6 +680,99 @@ def calculate_forces_all():
 
 
 
+# CUDA kernel
+kernel_code = '''
+#include <math_functions.h>
+
+extern "C" 
+__global__ void calculate_forces(const double3* electron_positions,
+                                 const double3* electron_velocities,
+                                       double3* forces,
+                                 int num_electrons,
+                                 double coulombs_constant,
+                                 double electron_charge) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if(i < 10) {
+        printf("num_electrons %d\\n", num_electrons );
+        printf("coulombs_constant %f \\n", coulombs_constant);
+        printf("electron_charge %e\\n", electron_charge);
+    }
+    if(i < num_electrons) {
+        double3 force = make_double3(0.0, 0.0, 0.0);
+
+        for(int j = 0; j < num_electrons; j++) {
+            if(i != j) {
+                double3 r;
+                // Subtract vector components manually or use a predefined function if available
+                r.x = electron_positions[i].x - electron_positions[j].x;
+                r.y = electron_positions[i].y - electron_positions[j].y;
+                r.z = electron_positions[i].z - electron_positions[j].z;
+
+                double dist_sq = r.x * r.x + r.y * r.y + r.z * r.z;
+                dist_sq = max(dist_sq, 0.0001); // avoid divide by zero using double precision
+
+                double coulomb = coulombs_constant * electron_charge * electron_charge / dist_sq;
+
+                // Normalize the r vector manually
+                double len_inv = rsqrt(dist_sq); // rsqrt is reciprocal square root
+                double3 normalized_r = make_double3(r.x * len_inv, r.y * len_inv, r.z * len_inv);
+
+                force.x += coulomb * normalized_r.x;
+                force.y += coulomb * normalized_r.y;
+                force.z += coulomb * normalized_r.z;
+            }
+        }
+        // Debug: Print the calculated force for the first few electrons
+        if(i < 10) {
+            printf("Electron %d Force: x=%f, y=%f, z=%f\\n", i, force.x, force.y, force.z);
+        }
+        forces[i] = force;
+    }
+}
+
+'''
+
+# Load CUDA source and get kernel function
+module = cp.RawModule(code=kernel_code)
+calculate_forces = module.get_function('calculate_forces')
+
+# Kernel launch configuration
+threadsperblock = 512
+blockspergrid = math.ceil(num_electrons/threadsperblock)
+
+
+# Note for reference the CuPy globals on the GPU memory are:
+#   electron_positions = cp.zeros((num_electrons, 3))
+#   electron_velocities = cp.zeros((num_electrons, 3))
+#   forces = cp.zeros((num_electrons, 3))
+def calculate_forces_cuda():
+    global electron_positions, electron_velocities, forces, num_electrons, coulombs_constant, electron_charge
+    # Launch kernel with the corrected arguments passing
+    print("starting calculate_forces_cuda")
+    print_forces_sum()
+    try:
+        calculate_forces(grid=(blockspergrid, 1, 1),
+                     block=(threadsperblock, 1, 1),
+                     args=(electron_positions, electron_velocities, forces, num_electrons, coulombs_constant, electron_charge))
+        cp.cuda.Device().synchronize()    #  Let this finish before we do anything else
+    except cp.cuda.CUDARuntimeError as e:
+        print(f"CUDA Error: {e}")
+    print_forces_sum()
+    print("ending calculate_forces_cuda")
+
+def print_forces_sum():
+    global forces, num_electrons
+
+    # Sum forces along the first axis to get the total force in each direction
+    total_forces = cp.sum(forces, axis=0)
+
+    # total_forces now contains the sum of x, y, and z components of the forces
+    # Calculate the magnitude of the total force vector
+    total_force_magnitude = cp.linalg.norm(total_forces)
+    print("total_force_magnitude = ", total_force_magnitude)
+
+
 def update_pv(dt):
     global electron_velocities, electron_positions, bounds, forces, effective_electron_mass
 
@@ -754,8 +849,10 @@ def main():
             future = client.submit(visualize_atoms, copypositions, copyvelocities, step, t)
             futures.append(future)
 
-        print("Updating force chunked", step)
-        calculate_forces_chunked()
+        #print("Updating force chunked", step)
+        #calculate_forces_chunked()
+        print("calculate_forces_cuda", step)
+        calculate_forces_cuda()
         #print("Updating force nearby", step)
         #calculate_forces_nearby()
         #print("Updating force all", step)

@@ -26,7 +26,7 @@ done
 mv simulation_video.mp4 "results/${current_date}.${simnum}.${counter}.mp4"
 
 # Move the simulation to the results directory with the new name
-mv simulation "results/${current_date}.${counter}"
+mv simulation "results/${current_date}.${simnum}.${counter}"
 
-echo "Files moved to results/${current_date}.${counter}"
+echo "Files moved to results/${current_date}.${simnum}.${counter}"
 
