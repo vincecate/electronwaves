@@ -212,6 +212,14 @@ if simnum==10:            #
     pulse_width=80      # Really want twice this but may be able to learn something with this.  
     num_steps =  2000    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
 
+if simnum==11:            #
+    gridx = 200          # 
+    gridy = 100          # 
+    gridz = 100          # 
+    speedup = 100        # sort of rushing the simulation time
+    pulse_width=90      # Really want twice this but may be able to learn something with this.  
+    num_steps =  2000    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
+
 DisplaySteps = 5000  # every so many simulation steps we call the visualize code
 WireSteps = 1        # every so many simulation steps we call the visualize code
 
