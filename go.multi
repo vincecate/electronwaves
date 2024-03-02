@@ -14,7 +14,7 @@ else
     mkdir "$DIR"
 fi
 
-for i in 1 2 3; do
+for i in 8 9 10; do
   echo "Iteration with i=$i"
   date
   ./electromag.py $i

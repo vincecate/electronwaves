@@ -128,6 +128,7 @@ else:
 effective_electron_mass = electron_mass   #  default is the same
 electron_thermal_speed = 1.1e6            # meters per second
 bounce_distance = 1e-10                   # closer than this and we make electrons bounce off each other
+forcecalc = 1            # 1 for CUDA, 2 chunked, 3 nearby, 4 call 
 
 # Making wider wires have deeper pulses so scaling is 3D to give better estimate for real wire extrapolation
 if simnum==1:            # 
@@ -167,8 +168,48 @@ if simnum==5:            #
     gridx = 80          # 
     gridy = 35          # 
     gridz = 35          # 
-    speedup = 200        # sort of rushing the simulation time
+    speedup = 100        # sort of rushing the simulation time
     pulse_width=35      # Really want twice this but may be able to learn something with this.  
+    num_steps =  2000    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
+
+if simnum==6:            #
+    gridx = 100          # 
+    gridy = 40          # 
+    gridz = 40          # 
+    speedup = 100        # sort of rushing the simulation time
+    pulse_width=40      # Really want twice this but may be able to learn something with this.  
+    num_steps =  2000    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
+
+if simnum==7:            #
+    gridx = 120          # 
+    gridy = 50          # 
+    gridz = 50          # 
+    speedup = 100        # sort of rushing the simulation time
+    pulse_width=50      # Really want twice this but may be able to learn something with this.  
+    num_steps =  2000    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
+
+if simnum==8:            #
+    gridx = 140          # 
+    gridy = 60          # 
+    gridz = 60          # 
+    speedup = 100        # sort of rushing the simulation time
+    pulse_width=60      # Really want twice this but may be able to learn something with this.  
+    num_steps =  2000    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
+
+if simnum==9:            #
+    gridx = 160          # 
+    gridy = 70          # 
+    gridz = 70          # 
+    speedup = 100        # sort of rushing the simulation time
+    pulse_width=70      # Really want twice this but may be able to learn something with this.  
+    num_steps =  2000    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
+
+if simnum==10:            #
+    gridx = 180          # 
+    gridy = 80          # 
+    gridz = 80          # 
+    speedup = 100        # sort of rushing the simulation time
+    pulse_width=80      # Really want twice this but may be able to learn something with this.  
     num_steps =  2000    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
 
 DisplaySteps = 5000  # every so many simulation steps we call the visualize code
@@ -693,11 +734,11 @@ __global__ void calculate_forces(const double3* electron_positions,
                                  double electron_charge) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
 
-    if(i < 10) {
-        printf("num_electrons %d\\n", num_electrons );
-        printf("coulombs_constant %f \\n", coulombs_constant);
-        printf("electron_charge %e\\n", electron_charge);
-    }
+    //if (threadIdx.x == 0 && blockIdx.x == 0) { // print once per kernel launch
+    //    printf("num_electrons %d\\n", num_electrons );
+    //    printf("coulombs_constant %f \\n", coulombs_constant);
+    //    printf("electron_charge %e\\n", electron_charge);
+    //}
     if(i < num_electrons) {
         double3 force = make_double3(0.0, 0.0, 0.0);
 
@@ -710,7 +751,7 @@ __global__ void calculate_forces(const double3* electron_positions,
                 r.z = electron_positions[i].z - electron_positions[j].z;
 
                 double dist_sq = r.x * r.x + r.y * r.y + r.z * r.z;
-                dist_sq = max(dist_sq, 0.0001); // avoid divide by zero using double precision
+                dist_sq = max(dist_sq, 1.0e-50); // avoid divide by zero using double precision
 
                 double coulomb = coulombs_constant * electron_charge * electron_charge / dist_sq;
 
@@ -724,10 +765,14 @@ __global__ void calculate_forces(const double3* electron_positions,
             }
         }
         // Debug: Print the calculated force for the first few electrons
-        if(i < 10) {
-            printf("Electron %d Force: x=%f, y=%f, z=%f\\n", i, force.x, force.y, force.z);
-        }
-        forces[i] = force;
+        //if(i < 10) {
+        //    printf("Electron %d Force: x=%e, y=%e, z=%e\\n", i, force.x, force.y, force.z);
+        // }
+
+        // forces[i] = force;
+        atomicAdd(&forces[i].x, force.x);
+        atomicAdd(&forces[i].y, force.y);
+        atomicAdd(&forces[i].z, force.z);
     }
 }
 
@@ -750,7 +795,7 @@ def calculate_forces_cuda():
     global electron_positions, electron_velocities, forces, num_electrons, coulombs_constant, electron_charge
     # Launch kernel with the corrected arguments passing
     print("starting calculate_forces_cuda")
-    print_forces_sum()
+    forces.fill(0)
     try:
         calculate_forces(grid=(blockspergrid, 1, 1),
                      block=(threadsperblock, 1, 1),
@@ -758,7 +803,6 @@ def calculate_forces_cuda():
         cp.cuda.Device().synchronize()    #  Let this finish before we do anything else
     except cp.cuda.CUDARuntimeError as e:
         print(f"CUDA Error: {e}")
-    print_forces_sum()
     print("ending calculate_forces_cuda")
 
 def print_forces_sum():
@@ -849,14 +893,22 @@ def main():
             future = client.submit(visualize_atoms, copypositions, copyvelocities, step, t)
             futures.append(future)
 
-        #print("Updating force chunked", step)
-        #calculate_forces_chunked()
-        print("calculate_forces_cuda", step)
-        calculate_forces_cuda()
-        #print("Updating force nearby", step)
-        #calculate_forces_nearby()
-        #print("Updating force all", step)
-        #calculate_forces_all()
+        print("main before calling forces")
+        print_forces_sum()
+        if (forcecalc == 1):
+            print("calculate_forces_cuda", step)
+            calculate_forces_cuda()
+        if (forcecalc == 2):
+            print("Updating force chunked", step)
+            calculate_forces_chunked()
+        if (forcecalc == 3): 
+            print("Updating force nearby", step)
+            calculate_forces_nearby()
+        if (forcecalc == 4): 
+            print("Updating force all", step)
+            calculate_forces_all()
+        print("main after calling forces")
+        print_forces_sum()
         GPUMem()
 
         print("Updating position and velocity", t)
