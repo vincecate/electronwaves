@@ -151,7 +151,7 @@ if simnum==3:            # Ug came out slower when was predicting much faster - 
     gridx = 70           # 
     gridy = 30           # 
     gridz = 30           # 
-    speedup = 100        # sort of rushing the simulation time
+    speedup = 100         # sort of rushing the simulation time
     pulse_width=30       # how many planes will be given pulse - we simulate half toward middle of this at each end
     num_steps =  4000    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
 
@@ -391,6 +391,8 @@ def generate_thermal_velocities(num_electrons, temperature=300):
 # When done with initialize_electrons these two arrays should have this shape
 # electron_positions = cp.zeros((num_electrons, 3))
 # electron_velocities = cp.zeros((num_electrons, 3))
+# past_positions_count = 100
+# electron_past_positions = cp.zeros((num_electrons, past_positions_count, 3))   # keeping past positions with current at 0, previos 1, etc
 def initialize_electrons():
     global initial_radius, electron_velocities, electron_positions, num_electrons, electron_past_positions
     global initial_spacing, initialize_velocities, electron_speed, pulse_width, electron_thermal_speed, gridx, gridy, gridz
@@ -424,7 +426,11 @@ def initialize_electrons():
     
     # Set all past positions to the current positions
     # We use broadcasting to replicate the current positions across the second dimension of electron_past_positions
-    electron_past_positions[:] = electron_positions[:, None, :]
+    # electron_past_positions[:] = electron_positions[:, None, :]
+
+    # Set all past positions to the current positions
+    electron_past_positions = cp.tile(electron_positions[:, None, :], (1, past_positions_count, 1))
+
 
     # Explanation:
     # electron_positions[:, None, :] reshapes electron_positions for broadcasting by adding an extra dimension
@@ -749,7 +755,7 @@ __device__ int find_best_delay_match_position(const double3 current_position, co
     int right = history_slices - 1;
     const double speed_of_light = 299792458; // Speed of light in meters per second
 
-    while (left <= right) {
+    while (left < right -1 ) {
         int mid = left + (right - left) / 2;
         double3 past_position = historical_positions[mid];
         // Calculate the Euclidean distance between the current and past positions
@@ -777,8 +783,9 @@ __device__ int find_best_delay_match_position(const double3 current_position, co
         }
     }
 
-    // Return -1 if no suitable position was found (should not happen with correct inputs)
-    return -1;
+    // We may never have difference less than dt so just return right in that case
+    // printf("left %d  right %d \\n", left, right);
+    return right;
 }
 
 extern "C" __global__ void calculate_forces(const double3* electron_positions,
@@ -802,8 +809,13 @@ extern "C" __global__ void calculate_forces(const double3* electron_positions,
         for (int j = 0; j < num_electrons; j++) {
             if (i != j) {
                 // Use find_best_delay_match_position to find the index of the best matching past position
+                if (threadIdx.x == 0 && blockIdx.x == 0 && j == 5)
+                    printf("getting best_delay_index \\n");
                 int best_delay_index = find_best_delay_match_position(current_position, &electron_past_positions[j * past_positions_count], past_positions_count, dt);
 
+                if (threadIdx.x == 0 && blockIdx.x == 0 && j == 5)
+                    printf("best_delay_index = %d\\n", best_delay_index);
+               
                 double3 delayed_position = electron_past_positions[j * past_positions_count + best_delay_index];
 
                 // Proceed with force calculation using delayed_position instead of current position
