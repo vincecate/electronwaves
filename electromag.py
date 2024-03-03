@@ -289,7 +289,6 @@ def GPUMem():
 
 GPUMem()
 
-#electron_positions = cp.zeros((gridx, gridy, gridz, 3))    # old way
 
 
 # num_electrons is the total number of electrons
@@ -300,6 +299,8 @@ electron_positions = cp.zeros((num_electrons, 3))
 electron_velocities = cp.zeros((num_electrons, 3))
 forces = cp.zeros((num_electrons, 3))
 
+past_positions_count = 100
+electron_past_positions = cp.zeros((num_electrons, past_positions_count, 3))   # keeping past positions with current at 0, previos 1, etc
 
 def calculate_collision_velocity(v1, v2, p1, p2):
     """
@@ -391,7 +392,7 @@ def generate_thermal_velocities(num_electrons, temperature=300):
 # electron_positions = cp.zeros((num_electrons, 3))
 # electron_velocities = cp.zeros((num_electrons, 3))
 def initialize_electrons():
-    global initial_radius, electron_velocities, electron_positions, num_electrons
+    global initial_radius, electron_velocities, electron_positions, num_electrons, electron_past_positions
     global initial_spacing, initialize_velocities, electron_speed, pulse_width, electron_thermal_speed, gridx, gridy, gridz
 
     # Calculate the adjusted number of electrons for the pulse and rest regions to match the num_electrons
@@ -420,6 +421,15 @@ def initialize_electrons():
     else:
         electron_velocities = cp.zeros((num_electrons, 3))
 
+    
+    # Set all past positions to the current positions
+    # We use broadcasting to replicate the current positions across the second dimension of electron_past_positions
+    electron_past_positions[:] = electron_positions[:, None, :]
+
+    # Explanation:
+    # electron_positions[:, None, :] reshapes electron_positions for broadcasting by adding an extra dimension
+    # This makes its shape (num_electrons, 1, 3), which is compatible for broadcasting across the past_positions dimension
+    # The assignment then replicates the current position across all past positions for each electron
 
 
 
@@ -731,32 +741,76 @@ def calculate_forces_all():
 
 # CUDA kernel
 kernel_code = '''
-#include <math_functions.h>
+//#include <math_functions.h>
+//#include <cuda_runtime_api.h>
+#include <cuda_runtime.h>
 
 extern "C" 
-__global__ void calculate_forces(const double3* electron_positions,
-                                 const double3* electron_velocities,
-                                       double3* forces,
-                                 int num_electrons,
-                                 double coulombs_constant,
-                                 double electron_charge) {
+
+__device__ int find_best_delay_match_position(const double3 current_position, const double3* historical_positions, int history_slices, double dt) {
+    int left = 0;
+    int right = history_slices - 1;
+    const double speed_of_light = 299792458; // Speed of light in meters per second
+
+    while (left <= right) {
+        int mid = left + (right - left) / 2;
+        double3 past_position = historical_positions[mid];
+        
+        // Calculate the Euclidean distance between the current and past positions
+        double dx = current_position.x - past_position.x;
+        double dy = current_position.y - past_position.y;
+        double dz = current_position.z - past_position.z;
+        double distance = sqrt(dx * dx + dy * dy + dz * dz);
+
+
+        // Calculate the time it takes for light to travel this distance
+        double light_travel_time = distance / speed_of_light;
+
+        // Calculate how far back in time this historical position is
+        double actual_time_back = mid * dt;
+
+        if (fabs(light_travel_time - actual_time_back) < dt) {
+            // If the difference is less than one time step, consider it a match
+            return mid;
+        } else if (light_travel_time > actual_time_back) {
+            // If light travel time is greater, we're too far back in time
+            right = mid - 1;
+        } else {
+            // If light travel time is less, we need to look further back in time
+            left = mid + 1;
+        }
+    }
+
+    // Return -1 if no suitable position was found (should not happen with correct inputs)
+    return -1;
+}
+
+__global__ void calculate_forces(
+    const double3* electron_positions,
+    const double3* electron_past_positions, // Add past positions array
+    const int past_positions_count,               // Number of past positions stored
+    double3* forces,
+    int num_electrons,
+    double coulombs_constant,
+    double electron_charge,
+    double dt) {                            // Time step for delay calculation
+
     int i = blockIdx.x * blockDim.x + threadIdx.x;
-
-    //if (threadIdx.x == 0 && blockIdx.x == 0) { // print once per kernel launch
-    //    printf("num_electrons %d\\n", num_electrons );
-    //    printf("coulombs_constant %f \\n", coulombs_constant);
-    //    printf("electron_charge %e\\n", electron_charge);
-    //}
-    if(i < num_electrons) {
+    if (i < num_electrons) {
         double3 force = make_double3(0.0, 0.0, 0.0);
+        double3 current_position = electron_positions[i];
 
-        for(int j = 0; j < num_electrons; j++) {
-            if(i != j) {
-                double3 r;
-                // Subtract vector components manually or use a predefined function if available
-                r.x = electron_positions[i].x - electron_positions[j].x;
-                r.y = electron_positions[i].y - electron_positions[j].y;
-                r.z = electron_positions[i].z - electron_positions[j].z;
+        for (int j = 0; j < num_electrons; j++) {
+            if (i != j) {
+                // Use find_best_delay_match_position to find the index of the best matching past position
+                int best_delay_index = find_best_delay_match_position(current_position, electron_past_positions + j * past_positions_count, past_positions_count, dt);
+                double3 delayed_position = electron_past_positions[j * past_positions_count + best_delay_index];
+
+                // Proceed with force calculation using delayed_position instead of current position
+                double3 r = make_double3(
+                    current_position.x - delayed_position.x,
+                    current_position.y - delayed_position.y,
+                    current_position.z - delayed_position.z);
 
                 double dist_sq = r.x * r.x + r.y * r.y + r.z * r.z;
                 dist_sq = max(dist_sq, 1.0e-50); // avoid divide by zero using double precision
@@ -784,6 +838,7 @@ __global__ void calculate_forces(const double3* electron_positions,
     }
 }
 
+
 '''
 
 # Load CUDA source and get kernel function
@@ -799,15 +854,16 @@ blockspergrid = math.ceil(num_electrons/threadsperblock)
 #   electron_positions = cp.zeros((num_electrons, 3))
 #   electron_velocities = cp.zeros((num_electrons, 3))
 #   forces = cp.zeros((num_electrons, 3))
+#
 def calculate_forces_cuda():
-    global electron_positions, electron_velocities, forces, num_electrons, coulombs_constant, electron_charge
+    global electron_positions, electron_velocities, electron_past_positions, past_positions_count, forces, num_electrons, coulombs_constant, electron_charge, dt
     # Launch kernel with the corrected arguments passing
     print("starting calculate_forces_cuda")
     forces.fill(0)
     try:
         calculate_forces(grid=(blockspergrid, 1, 1),
                      block=(threadsperblock, 1, 1),
-                     args=(electron_positions, electron_velocities, forces, num_electrons, coulombs_constant, electron_charge))
+                     args=(electron_positions, electron_past_positions, past_positions_count, forces, num_electrons, coulombs_constant, electron_charge,dt))
         cp.cuda.Device().synchronize()    #  Let this finish before we do anything else
     except cp.cuda.CUDARuntimeError as e:
         print(f"CUDA Error: {e}")
@@ -826,7 +882,7 @@ def print_forces_sum():
 
 
 def update_pv(dt):
-    global electron_velocities, electron_positions, bounds, forces, effective_electron_mass
+    global electron_velocities, electron_positions, bounds, forces, effective_electron_mass, electron_past_positions
 
     # Calculate acceleration based on F=ma
     acceleration = forces / effective_electron_mass
@@ -848,6 +904,15 @@ def update_pv(dt):
         below_min = electron_positions[:, dim] < bounds[dim][0]  # 0 holds min
         electron_positions[below_min, dim] = bounds[dim][0]  # Set to min bound
         electron_velocities[below_min, dim] *= -1  # Reverse velocity
+
+    
+    # Step 1: Shift all past positions to the right by one position
+    # We copy from the end towards the beginning to avoid overwriting data that we still need to copy
+    for i in range(past_positions_count - 1, 0, -1):
+        electron_past_positions[:, i, :] = electron_past_positions[:, i - 1, :]
+
+    # Step 2: Copy the current electron_positions into the first spot of electron_past_positions
+        electron_past_positions[:, 0, :] = electron_positions
 
     # Diagnostic output to monitor maximum position and velocity magnitudes
     max_position_magnitude = cp.max(cp.linalg.norm(electron_positions, axis=1))
