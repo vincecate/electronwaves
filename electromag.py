@@ -867,13 +867,13 @@ def calculate_forces_cuda():
     # Launch kernel with the corrected arguments passing
     print("starting calculate_forces_cuda")
     forces.fill(0)
-    try:
-        calculate_forces(grid=(blockspergrid, 1, 1),
+    #try:
+    calculate_forces(grid=(blockspergrid, 1, 1),
                      block=(threadsperblock, 1, 1),
                      args=(electron_positions, electron_past_positions, past_positions_count, forces, num_electrons, coulombs_constant, electron_charge,dt))
-        cp.cuda.Device().synchronize()    #  Let this finish before we do anything else
-    except cp.cuda.CUDARuntimeError as e:
-        print(f"CUDA Error: {e}")
+    cp.cuda.Device().synchronize()    #  Let this finish before we do anything else
+    #except cp.cuda.CUDARuntimeError as e:
+    #    print(f"CUDA Error: {e}")
     print("ending calculate_forces_cuda")
 
 def print_forces_sum():
