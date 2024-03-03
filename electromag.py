@@ -113,6 +113,13 @@ import os
 import sys
 import math
 
+# Enable dumping CUDA source on error
+# os.environ['CUPY_DUMP_CUDA_SOURCE_ON_ERROR'] = '1'
+
+# Enable verbose CUDA compilation debug output
+# os.environ['CUPY_CUDA_COMPILE_WITH_DEBUG'] = '1'
+
+
 # Check if at least one argument is provided (excluding the script name)
 if len(sys.argv) > 1:
     simnum = int(sys.argv[1])  # The first argument passed to the script
@@ -742,8 +749,8 @@ def calculate_forces_all():
 # CUDA kernel
 kernel_code = '''
 //#include <math_functions.h>
-//#include <cuda_runtime_api.h>
-#include <cuda_runtime.h>
+#include <cuda_runtime_api.h>
+//#include <cuda_runtime.h>
 
 extern "C" 
 
@@ -785,10 +792,10 @@ __device__ int find_best_delay_match_position(const double3 current_position, co
     return -1;
 }
 
-__global__ void calculate_forces(
+__global__ void cuda_calculate_forces(
     const double3* electron_positions,
-    const double3* electron_past_positions, // Add past positions array
-    const int past_positions_count,               // Number of past positions stored
+    const double3* electron_past_positions,   // Add past positions array
+    const int past_positions_count,           // Number of past positions stored
     double3* forces,
     int num_electrons,
     double coulombs_constant,
@@ -831,10 +838,10 @@ __global__ void calculate_forces(
         //    printf("Electron %d Force: x=%e, y=%e, z=%e\\n", i, force.x, force.y, force.z);
         // }
 
-        // forces[i] = force;
-        atomicAdd(&forces[i].x, force.x);
-        atomicAdd(&forces[i].y, force.y);
-        atomicAdd(&forces[i].z, force.z);
+        forces[i] = force;
+        //atomicAdd(&forces[i].x, force.x);
+        //atomicAdd(&forces[i].y, force.y);
+        //atomicAdd(&forces[i].z, force.z);
     }
 }
 
@@ -843,7 +850,7 @@ __global__ void calculate_forces(
 
 # Load CUDA source and get kernel function
 module = cp.RawModule(code=kernel_code)
-calculate_forces = module.get_function('calculate_forces')
+calculate_forces = module.get_function('cuda_calculate_forces')
 
 # Kernel launch configuration
 threadsperblock = 512
