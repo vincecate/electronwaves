@@ -113,13 +113,6 @@ import os
 import sys
 import math
 
-# Enable dumping CUDA source on error
-# os.environ['CUPY_DUMP_CUDA_SOURCE_ON_ERROR'] = '1'
-
-# Enable verbose CUDA compilation debug output
-# os.environ['CUPY_CUDA_COMPILE_WITH_DEBUG'] = '1'
-
-
 # Check if at least one argument is provided (excluding the script name)
 if len(sys.argv) > 1:
     simnum = int(sys.argv[1])  # The first argument passed to the script
@@ -128,7 +121,7 @@ else:
     print("No simulation number provided. Exiting.")
     sys.exit(1)  # Exit the script with an error code
 
-
+cp.random.seed(999)
 # $1 argument gets saved to simnum so can do batch of several simulations from script
 # have a set to try to get projection to speed of light in full size plane wave
 
@@ -177,7 +170,7 @@ if simnum==5:            #
     gridz = 35          # 
     speedup = 100        # sort of rushing the simulation time
     pulse_width=35      # Really want twice this but may be able to learn something with this.  
-    num_steps =  2000    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
+    num_steps = 5    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
 
 if simnum==6:            #
     gridx = 100          # 
@@ -748,11 +741,8 @@ def calculate_forces_all():
 
 # CUDA kernel
 kernel_code = '''
-//#include <math_functions.h>
-#include <cuda_runtime_api.h>
-//#include <cuda_runtime.h>
+#include <math_functions.h>
 
-extern "C" 
 
 __device__ int find_best_delay_match_position(const double3 current_position, const double3* historical_positions, int history_slices, double dt) {
     int left = 0;
@@ -762,7 +752,6 @@ __device__ int find_best_delay_match_position(const double3 current_position, co
     while (left <= right) {
         int mid = left + (right - left) / 2;
         double3 past_position = historical_positions[mid];
-        
         // Calculate the Euclidean distance between the current and past positions
         double dx = current_position.x - past_position.x;
         double dy = current_position.y - past_position.y;
@@ -792,25 +781,29 @@ __device__ int find_best_delay_match_position(const double3 current_position, co
     return -1;
 }
 
-__global__ void cuda_calculate_forces(
-    const double3* electron_positions,
-    const double3* electron_past_positions,   // Add past positions array
-    const int past_positions_count,           // Number of past positions stored
-    double3* forces,
-    int num_electrons,
-    double coulombs_constant,
-    double electron_charge,
-    double dt) {                            // Time step for delay calculation
+extern "C" __global__ void calculate_forces(const double3* electron_positions,
+                                const double3* electron_past_positions,
+                                const int past_positions_count,
+                                double3* forces,
+                                int num_electrons,
+                                double coulombs_constant,
+                                double electron_charge,
+                                double dt) {
 
     int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (threadIdx.x == 0 && blockIdx.x == 0)
+        printf("[CUDA-Cupy] num_electrons %d\\n", num_electrons );  // print once per kernel launch
+
     if (i < num_electrons) {
+
         double3 force = make_double3(0.0, 0.0, 0.0);
         double3 current_position = electron_positions[i];
 
         for (int j = 0; j < num_electrons; j++) {
             if (i != j) {
                 // Use find_best_delay_match_position to find the index of the best matching past position
-                int best_delay_index = find_best_delay_match_position(current_position, electron_past_positions + j * past_positions_count, past_positions_count, dt);
+                int best_delay_index = find_best_delay_match_position(current_position, &electron_past_positions[j * past_positions_count], past_positions_count, dt);
+
                 double3 delayed_position = electron_past_positions[j * past_positions_count + best_delay_index];
 
                 // Proceed with force calculation using delayed_position instead of current position
@@ -834,23 +827,22 @@ __global__ void cuda_calculate_forces(
             }
         }
         // Debug: Print the calculated force for the first few electrons
-        //if(i < 10) {
-        //    printf("Electron %d Force: x=%e, y=%e, z=%e\\n", i, force.x, force.y, force.z);
-        // }
+        if(i > num_electrons-10) {
+            printf("Electron %d Force: x=%e, y=%e, z=%e\\n", i, force.x, force.y, force.z);
+         }
 
-        forces[i] = force;
-        //atomicAdd(&forces[i].x, force.x);
-        //atomicAdd(&forces[i].y, force.y);
-        //atomicAdd(&forces[i].z, force.z);
+        // forces[i] = force;
+        atomicAdd(&forces[i].x, force.x);
+        atomicAdd(&forces[i].y, force.y);
+        atomicAdd(&forces[i].z, force.z);
     }
 }
-
 
 '''
 
 # Load CUDA source and get kernel function
 module = cp.RawModule(code=kernel_code)
-calculate_forces = module.get_function('cuda_calculate_forces')
+calculate_forces = module.get_function('calculate_forces')
 
 # Kernel launch configuration
 threadsperblock = 512
@@ -865,15 +857,25 @@ blockspergrid = math.ceil(num_electrons/threadsperblock)
 def calculate_forces_cuda():
     global electron_positions, electron_velocities, electron_past_positions, past_positions_count, forces, num_electrons, coulombs_constant, electron_charge, dt
     # Launch kernel with the corrected arguments passing
+    start_gpu = cp.cuda.Event()
+    end_gpu = cp.cuda.Event()
+    # Launch kernel with the corrected arguments passing
     print("starting calculate_forces_cuda")
     forces.fill(0)
-    #try:
-    calculate_forces(grid=(blockspergrid, 1, 1),
+    try:
+        start_gpu.record()
+        calculate_forces(grid=(blockspergrid, 1, 1),
                      block=(threadsperblock, 1, 1),
                      args=(electron_positions, electron_past_positions, past_positions_count, forces, num_electrons, coulombs_constant, electron_charge,dt))
-    cp.cuda.Device().synchronize()    #  Let this finish before we do anything else
-    #except cp.cuda.CUDARuntimeError as e:
-    #    print(f"CUDA Error: {e}")
+        cp.cuda.Device().synchronize()    #  Let this finish before we do anything else
+
+        end_gpu.record()
+        end_gpu.synchronize()
+        t_gpu = cp.cuda.get_elapsed_time(start_gpu, end_gpu)
+        print("Calculate_forces duration:", t_gpu)
+
+    except cp.cuda.CUDARuntimeError as e:
+        print(f"CUDA Error: {e}")
     print("ending calculate_forces_cuda")
 
 def print_forces_sum():
