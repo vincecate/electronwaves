@@ -690,6 +690,9 @@ extern "C" __global__ void calculate_forces(const double3* electron_positions, c
         for (int j = 0; j < num_electrons; j++) {
             if (i != j) {
                 int best_delay_index = find_best_delay_match_position(current_position, &electron_past_positions[j * past_positions_count], past_positions_count, dt);
+                if (threadIdx.x == 0 && blockIdx.x == 0 && j == 8)     
+                    printf("best_delay_index %d\\n", best_delay_index);   // one sample to see it changes
+
                 double3 delayed_position = electron_past_positions[j * past_positions_count + best_delay_index];
                 double3 past_velocity = electron_past_velocities[j * past_positions_count + best_delay_index];
 
