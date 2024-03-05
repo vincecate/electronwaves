@@ -157,7 +157,7 @@ if simnum==3:            # Ug came out slower when was predicting much faster - 
 
 
 if simnum==4:            #
-    gridx = 70           # 
+    gridx = 80           # 
     gridy = 40           # 
     gridz = 40           # 
     speedup = 50         # sort of rushing the simulation time
@@ -219,6 +219,15 @@ if simnum==11:            #
     speedup = 100        # sort of rushing the simulation time
     pulse_width=90      # Really want twice this but may be able to learn something with this.  
     num_steps =  2000    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
+
+if simnum==12:            #
+    gridx = 200           # 
+    gridy = 40           # 
+    gridz = 40           # 
+    speedup = 50         # sort of rushing the simulation time
+    pulse_width=30      # how many planes will be given pulse - we simulate half toward middle of this at each end
+    num_steps =  2000    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
+
 
 DisplaySteps = 5000  # every so many simulation steps we call the visualize code
 WireSteps = 1        # every so many simulation steps we call the visualize code
@@ -301,6 +310,7 @@ forces = cp.zeros((num_electrons, 3))
 
 past_positions_count = 100
 electron_past_positions = cp.zeros((num_electrons, past_positions_count, 3))   # keeping past positions with current at 0, previos 1, etc
+electron_past_velocities = cp.zeros((num_electrons, past_positions_count, 3))   # keeping past positions with current at 0, previos 1, etc
 
 def calculate_collision_velocity(v1, v2, p1, p2):
     """
@@ -431,6 +441,7 @@ def initialize_electrons():
     # Set all past positions to the current positions
     electron_past_positions = cp.tile(electron_positions[:, None, :], (1, past_positions_count, 1))
 
+    electron_past_velocities = cp.tile(electron_velocities[:, None, :], (1, past_positions_count, 1))
 
     # Explanation:
     # electron_positions[:, None, :] reshapes electron_positions for broadcasting by adding an extra dimension
@@ -750,13 +761,17 @@ kernel_code = '''
 #include <math_functions.h>
 
 
+// Find how far back in history is best match of distance and delay from speed of light
 __device__ int find_best_delay_match_position(const double3 current_position, const double3* historical_positions, int history_slices, double dt) {
     int left = 0;
     int right = history_slices - 1;
     const double speed_of_light = 299792458; // Speed of light in meters per second
 
-    while (left < right -1 ) {
-        int mid = left + (right - left) / 2;
+    while (left < right ) {
+        int mid = (left + right) / 2;
+        if (mid == left || mid == right)
+            return mid;                   // we are at the end
+
         double3 past_position = historical_positions[mid];
         // Calculate the Euclidean distance between the current and past positions
         double dx = current_position.x - past_position.x;
@@ -766,20 +781,20 @@ __device__ int find_best_delay_match_position(const double3 current_position, co
 
 
         // Calculate the time it takes for light to travel this distance
-        double light_travel_time = distance / speed_of_light;
+        double ideal_travel_time = distance / speed_of_light;
 
         // Calculate how far back in time this historical position is
-        double actual_time_back = mid * dt;
+        double simulation_time = mid * dt;
 
-        if (fabs(light_travel_time - actual_time_back) < dt) {
-            // If the difference is less than one time step, consider it a match
+        if (fabs(ideal_travel_time - simulation_time) < 0.5*dt) {
+            // If the difference is less than one half time step, consider it a match
             return mid;
-        } else if (light_travel_time > actual_time_back) {
-            // If light travel time is greater, we're too far back in time
-            right = mid - 1;
-        } else {
-            // If light travel time is less, we need to look further back in time
+        } else if (simulation_time < ideal_travel_time) {
+            // If sim time is not enough for this distance then go further back in time
             left = mid + 1;
+        } else {
+            // If sim time is too far back for this distance then look closer to the present 
+            right = mid - 1;
         }
     }
 
@@ -788,8 +803,9 @@ __device__ int find_best_delay_match_position(const double3 current_position, co
     return right;
 }
 
-extern "C" __global__ void calculate_forces(const double3* electron_positions,
+extern "C" __global__ void calculate_forces(const double3* electron_positions, const double3* electron_velocities,
                                 const double3* electron_past_positions,
+                                const double3* electron_past_velocities,
                                 const int past_positions_count,
                                 double3* forces,
                                 int num_electrons,
@@ -809,8 +825,6 @@ extern "C" __global__ void calculate_forces(const double3* electron_positions,
         for (int j = 0; j < num_electrons; j++) {
             if (i != j) {
                 // Use find_best_delay_match_position to find the index of the best matching past position
-                if (threadIdx.x == 0 && blockIdx.x == 0 && j == 5)
-                    printf("getting best_delay_index \\n");
                 int best_delay_index = find_best_delay_match_position(current_position, &electron_past_positions[j * past_positions_count], past_positions_count, dt);
 
                 if (threadIdx.x == 0 && blockIdx.x == 0 && j == 5)
