@@ -90,9 +90,6 @@ forcecalc = 1            # 1 for CUDA, 2 chunked, 3 nearby, 4 call
 
 # Making wider wires have deeper pulses so scaling is 3D to give better estimate for real wire extrapolation
 
-# Assuming `simnum` is the simulation number you received as an argument
-simnum = 1  # Example value, replace with actual input
-
 # Load the settings from the JSON file
 with open('settings.json', 'r') as file:
     settings = json.load(file)
