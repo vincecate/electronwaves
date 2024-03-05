@@ -728,9 +728,9 @@ extern "C" __global__ void calculate_forces(const double3* electron_positions, c
                 }
 
                 // Avoid negative or excessively large adjustment factors
-                adjustment_factor = max(0.1, min(adjustment_factor, 2.0));
+                //adjustment_factor = max(0.1, min(adjustment_factor, 2.0));
 
-                double coulomb = coulombs_constant * electron_charge * electron_charge / (dist_sq + 1.0e-20) * adjustment_factor; // Added epsilon to avoid division by zero
+                double coulomb = coulombs_constant * electron_charge * electron_charge / (dist_sq + 1.0e-60) * adjustment_factor; // Added epsilon to avoid division by zero
 
                 force.x += coulomb * normalized_r.x;
                 force.y += coulomb * normalized_r.y;
