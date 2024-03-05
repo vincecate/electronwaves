@@ -8,42 +8,6 @@
 # pip install distributed
 # pip install pycuda
 #
-#  We want to simulate an input wave and see if it can propagate through 
-#  electons in hydrogen gas.
-#  For now we just move some of the electrons in a layer of atoms on one edge and see what happens.
-#
-#
-#*
-# * Air molecules are around 0.1 nanometers
-# * The distance between air molecules is around 3.34 nanometers
-# * So about 33.38 times larger distance 
-# *
-#
-#According to the Bohr model, the speed of an electron in a hydrogen atom can be calculated using the formula:
-#
-#v=e^2/(2*ϵ0*h) * n
-#
-#
-#Where:
-#
-#    v is the speed of the electron.
-#    e is the elementary charge (1.602×10−191.602×10−19 Coulombs).
-#    ϵ0 the vacuum permittivity (8.854×10−128.854×10−12 C22/Nm22).
-#    h is the Planck constant (6.626×10−346.626×10−34 Js).
-#    n is the principal quantum number (for the first orbit of hydrogen, n=1n=1).
-#
-#Let's calculate this speed for the hydrogen atom in its ground state (where n=1n=1).
-#
-#In the Bohr model of the hydrogen atom, the speed of an electron in its ground state (with the principal quantum number n=1n=1) 
-# is approximately 2,187,278 meters per second.   This is about 0.73% the speed of light.
-# The calculated radii of the orbits for the hydrogen atom in the Bohr model for principal quantum numbers
-# 
-# n=1,2,3 are as follows:
-# 
-# For n=1 (ground state): The radius is approximately  5.29×10 −11 meters (or 52.9 picometers).
-# For n=2: The radius is approximately 2.12×10 −10 meters (or 212 picometers).
-# For n=3: The radius is approximately 4.76×10 −10 meters (or 476 picometers).
-#
 # Visible light falls within a range of wavelengths from approximately 380 nanometers (nm) to about 750 nm. 
 #    About 100 times the distance between air molecules!
 #
@@ -67,9 +31,6 @@
 # https://www.youtube.com/watch?v=Ii7rgIQawko   - The Science Asylum on relativity and manetic vs electric
 #     There are so many positive and negative charges that a slight length change in one can make significant net charge
 #
-# Updated plan Jan 24, 2024
-#    Simulate electron as cloud around nucleus with spring model - kind of like Maxwell model
-#    With a plane the net electric field does not really drop off.  This is why light is so fast!
 #
 # Would be amazing result of this theory if it could correctly show:
 #  1- speed of light comes out right from plane wave and electrons charge and mass
@@ -77,10 +38,6 @@
 #  3- magnetic field from moving charges - if we can simulate moving charges curving in mag field using instant force beteen electrons
 #  4 - ampiers law that two wires next to each othe with current going the same way attract and opposite then repel
 #
-# Updated plan Jan 25, 2024
-#     Ignor nucleus and think of electrons in a wire.
-#         If get to edge of wire need to reflect back - have square wire :-)
-#         For first simulation can start all with zero velocity
 # At room temperature a ratio of 1 electron in 100,000 copper atoms is really free.
 #   Same as saying only 0.001% or 10^-5 of the conduction electrons are free.
 
@@ -112,6 +69,7 @@ import multiprocessing
 import os
 import sys
 import math
+import json
 
 # Check if at least one argument is provided (excluding the script name)
 if len(sys.argv) > 1:
@@ -131,127 +89,31 @@ bounce_distance = 1e-10                   # closer than this and we make electro
 forcecalc = 1            # 1 for CUDA, 2 chunked, 3 nearby, 4 call 
 
 # Making wider wires have deeper pulses so scaling is 3D to give better estimate for real wire extrapolation
-if simnum==1:            # 
-    gridx = 200          # 
-    gridy = 10           # 
-    gridz = 10           # 
-    speedup = 30         # sort of rushing the simulation time
-    pulse_width=40       # how many planes will be given pulse - we simulate half toward middle of this at each end
-    num_steps =  5000    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
 
-if simnum==2:            # 
-    gridx = 70           #  could do 1500 before 2D code - here total is 28,000 electrons
-    gridy = 20           # 
-    gridz = 20           # 
-    speedup =  30       # sort of rushing the simulation time
-    pulse_width=20      # how many planes will be given pulse - we simulate half toward middle of this at each end
-    num_steps =  2000    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
+# Assuming `simnum` is the simulation number you received as an argument
+simnum = 1  # Example value, replace with actual input
 
-if simnum==3:            # Ug came out slower when was predicting much faster - might need to run longer to get real speed
-    gridx = 70           # 
-    gridy = 30           # 
-    gridz = 30           # 
-    speedup = 100         # sort of rushing the simulation time
-    pulse_width=30       # how many planes will be given pulse - we simulate half toward middle of this at each end
-    num_steps =  4000    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
+# Load the settings from the JSON file
+with open('settings.json', 'r') as file:
+    settings = json.load(file)
 
-
-if simnum==4:            #
-    gridx = 80           # 
-    gridy = 40           # 
-    gridz = 40           # 
-    speedup = 50         # sort of rushing the simulation time
-    pulse_width=30      # how many planes will be given pulse - we simulate half toward middle of this at each end
-    num_steps =  2000    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
-
-if simnum==5:            #
-    gridx = 80          # 
-    gridy = 35          # 
-    gridz = 35          # 
-    speedup = 100        # sort of rushing the simulation time
-    pulse_width=35      # Really want twice this but may be able to learn something with this.  
-    num_steps = 5    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
-
-if simnum==6:            #
-    gridx = 100          # 
-    gridy = 40          # 
-    gridz = 40          # 
-    speedup = 100        # sort of rushing the simulation time
-    pulse_width=40      # Really want twice this but may be able to learn something with this.  
-    num_steps =  2000    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
-
-if simnum==7:            #
-    gridx = 120          # 
-    gridy = 50          # 
-    gridz = 50          # 
-    speedup = 100        # sort of rushing the simulation time
-    pulse_width=50      # Really want twice this but may be able to learn something with this.  
-    num_steps =  2000    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
-
-if simnum==8:            #
-    gridx = 140          # 
-    gridy = 60          # 
-    gridz = 60          # 
-    speedup = 100        # sort of rushing the simulation time
-    pulse_width=60      # Really want twice this but may be able to learn something with this.  
-    num_steps =  2000    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
-
-if simnum==9:            #
-    gridx = 160          # 
-    gridy = 70          # 
-    gridz = 70          # 
-    speedup = 100        # sort of rushing the simulation time
-    pulse_width=70      # Really want twice this but may be able to learn something with this.  
-    num_steps =  2000    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
-
-if simnum==10:            #
-    gridx = 180          # 
-    gridy = 80          # 
-    gridz = 80          # 
-    speedup = 100        # sort of rushing the simulation time
-    pulse_width=80      # Really want twice this but may be able to learn something with this.  
-    num_steps =  2000    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
-
-if simnum==11:            #
-    gridx = 200          # 
-    gridy = 100          # 
-    gridz = 100          # 
-    speedup = 100        # sort of rushing the simulation time
-    pulse_width=90      # Really want twice this but may be able to learn something with this.  
-    num_steps =  2000    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
-
-if simnum==12:            #
-    gridx = 200           # 
-    gridy = 40           # 
-    gridz = 40           # 
-    speedup = 50         # sort of rushing the simulation time
-    pulse_width=30      # how many planes will be given pulse - we simulate half toward middle of this at each end
-    num_steps =  2000    # how many simulation steps - note dt slows down as this gets bigger unless you adjust speedup
+# Access the settings for the given simulation number
+if str(simnum) in settings:  # Convert simnum to string for matching keys
+    sim_settings = settings[str(simnum)]
+    gridx = sim_settings['gridx']
+    gridy = sim_settings['gridy']
+    gridz = sim_settings['gridz']
+    speedup = sim_settings['speedup']
+    pulse_width = sim_settings['pulse_width']
+    num_steps = sim_settings['num_steps']
+else:
+    print(f"No settings found for simulation number {simnum}")
+    # Handle the case where there are no settings for the provided simnum
 
 
 DisplaySteps = 5000  # every so many simulation steps we call the visualize code
 WireSteps = 1        # every so many simulation steps we call the visualize code
 
-
-#     gridx gridy gridz  = total electrons
-# Enough GPU memory
-#        1500 20 20   = 600000 
-#        3300 10 10   = 330000
-#        800 40 40    = 1280000
-#        400 50 50    = 1000000
-#        300 100 100  = 3000000
-
-#     gridx gridy gridz  = total electrons
-# Enough GPU memory
-#        1500 20 20   = 600000 
-#        3300 10 10   = 330000
-#        800 40 40    = 1280000
-#        400 50 50    = 1000000
-#        300 100 100  = 3000000
-# Not enough GPU memory
-#       3500 10 10   = 350000
-#       3200 20 20   = 1280000
-#       2000 20 20   = 800000
 
 # Initial electron speed 2,178,278 m/s
 # electron_speed= 2178278  
