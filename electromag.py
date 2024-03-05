@@ -969,9 +969,12 @@ def update_pv(dt):
     # We copy from the end towards the beginning to avoid overwriting data that we still need to copy
     for i in range(past_positions_count - 1, 0, -1):
         electron_past_positions[:, i, :] = electron_past_positions[:, i - 1, :]
+        electron_past_velocities[:, i, :] = electron_past_velocities[:, i - 1, :]
 
-    # Step 2: Copy the current electron_positions into the first spot of electron_past_positions
+    # Step 2: Copy the current electron_positions into the first spot of electron_past_positions and past_velocities
         electron_past_positions[:, 0, :] = electron_positions
+        electron_past_velocities[:, 0, :] = electron_velocities
+
 
     # Diagnostic output to monitor maximum position and velocity magnitudes
     max_position_magnitude = cp.max(cp.linalg.norm(electron_positions, axis=1))
