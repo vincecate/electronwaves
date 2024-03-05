@@ -803,6 +803,8 @@ __device__ int find_best_delay_match_position(const double3 current_position, co
     return right;
 }
 
+
+
 extern "C" __global__ void calculate_forces(const double3* electron_positions, const double3* electron_velocities,
                                 const double3* electron_past_positions,
                                 const double3* electron_past_velocities,
@@ -812,57 +814,79 @@ extern "C" __global__ void calculate_forces(const double3* electron_positions, c
                                 double coulombs_constant,
                                 double electron_charge,
                                 double dt) {
-
     int i = blockIdx.x * blockDim.x + threadIdx.x;
+    const double speed_of_light = 299792458.0; // Speed of light in meters per second
+
     if (threadIdx.x == 0 && blockIdx.x == 0)
         printf("[CUDA-Cupy] num_electrons %d\\n", num_electrons );  // print once per kernel launch
 
     if (i < num_electrons) {
-
         double3 force = make_double3(0.0, 0.0, 0.0);
         double3 current_position = electron_positions[i];
+        double3 current_velocity = electron_velocities[i];
 
         for (int j = 0; j < num_electrons; j++) {
             if (i != j) {
-                // Use find_best_delay_match_position to find the index of the best matching past position
                 int best_delay_index = find_best_delay_match_position(current_position, &electron_past_positions[j * past_positions_count], past_positions_count, dt);
-
-                if (threadIdx.x == 0 && blockIdx.x == 0 && j == 5)
-                    printf("best_delay_index = %d\\n", best_delay_index);
-               
                 double3 delayed_position = electron_past_positions[j * past_positions_count + best_delay_index];
+                double3 past_velocity = electron_past_velocities[j * past_positions_count + best_delay_index];
 
-                // Proceed with force calculation using delayed_position instead of current position
                 double3 r = make_double3(
                     current_position.x - delayed_position.x,
                     current_position.y - delayed_position.y,
                     current_position.z - delayed_position.z);
 
                 double dist_sq = r.x * r.x + r.y * r.y + r.z * r.z;
-                dist_sq = max(dist_sq, 1.0e-50); // avoid divide by zero using double precision
+                dist_sq = max(dist_sq, 1.0e-20); // avoid divide by zero
 
-                double coulomb = coulombs_constant * electron_charge * electron_charge / dist_sq;
-
-                // Normalize the r vector manually
-                double len_inv = rsqrt(dist_sq); // rsqrt is reciprocal square root
+                double len_inv = rsqrt(dist_sq); // reciprocal square root
                 double3 normalized_r = make_double3(r.x * len_inv, r.y * len_inv, r.z * len_inv);
+
+                double3 relative_velocity = make_double3(
+                    current_velocity.x - past_velocity.x,
+                    current_velocity.y - past_velocity.y,
+                    current_velocity.z - past_velocity.z);
+
+                double dot_product = relative_velocity.x * normalized_r.x +
+                                     relative_velocity.y * normalized_r.y +
+                                     relative_velocity.z * normalized_r.z;
+
+
+                double relative_velocity_magnitude = sqrt(relative_velocity.x * relative_velocity.x +
+                                           relative_velocity.y * relative_velocity.y +
+                                           relative_velocity.z * relative_velocity.z + 1.0e-20); // Added epsilon to avoid division by zero
+
+                // Ensure dot_product is scaled properly relative to the magnitudes and speed of light
+                // Adjustment_factor should be greater than 1 if coming together and less than 1 if moving away 
+                double adjustment_factor = 1.0; // Default to no adjustment
+                if (dot_product < 0) { // Moving towards each other, increase force
+                    adjustment_factor += fabs(dot_product) / (relative_velocity_magnitude * speed_of_light);
+                } else { // Moving apart, decrease force
+                    adjustment_factor -= fabs(dot_product) / (relative_velocity_magnitude * speed_of_light);
+                }
+
+                // Avoid negative or excessively large adjustment factors
+                adjustment_factor = max(0.1, min(adjustment_factor, 2.0));
+
+                double coulomb = coulombs_constant * electron_charge * electron_charge / (dist_sq + 1.0e-20) * adjustment_factor; // Added epsilon to avoid division by zero
 
                 force.x += coulomb * normalized_r.x;
                 force.y += coulomb * normalized_r.y;
                 force.z += coulomb * normalized_r.z;
             }
         }
-        // Debug: Print the calculated force for the first few electrons
+        // Debug: Print the calculated force for the last few electrons
         if(i > num_electrons-10) {
             printf("Electron %d Force: x=%e, y=%e, z=%e\\n", i, force.x, force.y, force.z);
          }
 
-        // forces[i] = force;
+        // Apply the calculated forces
         atomicAdd(&forces[i].x, force.x);
         atomicAdd(&forces[i].y, force.y);
         atomicAdd(&forces[i].z, force.z);
     }
 }
+
 
 '''
 
@@ -881,7 +905,7 @@ blockspergrid = math.ceil(num_electrons/threadsperblock)
 #   forces = cp.zeros((num_electrons, 3))
 #
 def calculate_forces_cuda():
-    global electron_positions, electron_velocities, electron_past_positions, past_positions_count, forces, num_electrons, coulombs_constant, electron_charge, dt
+    global electron_positions, electron_velocities, electron_past_positions, electron_past_velocities, past_positions_count, forces, num_electrons, coulombs_constant, electron_charge, dt
     # Launch kernel with the corrected arguments passing
     start_gpu = cp.cuda.Event()
     end_gpu = cp.cuda.Event()
@@ -892,7 +916,7 @@ def calculate_forces_cuda():
         start_gpu.record()
         calculate_forces(grid=(blockspergrid, 1, 1),
                      block=(threadsperblock, 1, 1),
-                     args=(electron_positions, electron_past_positions, past_positions_count, forces, num_electrons, coulombs_constant, electron_charge,dt))
+                     args=(electron_positions, electron_velocities, electron_past_positions, electron_past_velocities, past_positions_count, forces, num_electrons, coulombs_constant, electron_charge,dt))
         cp.cuda.Device().synchronize()    #  Let this finish before we do anything else
 
         end_gpu.record()
