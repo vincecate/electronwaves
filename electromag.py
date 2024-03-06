@@ -86,8 +86,6 @@ cp.random.seed(999)
 effective_electron_mass = electron_mass   #  default is the same
 electron_thermal_speed = 1.1e6            # meters per second
 bounce_distance = 1e-10                   # closer than this and we make electrons bounce off each other
-forcecalc = 1            # 1 for CUDA, 2 chunked, 3 nearby, 4 call 
-reverse_factor = -0.95   # when hits side of the wire is reflected - -1=100% and -0.95=95% velocity after reflected
 
 # Making wider wires have deeper pulses so scaling is 3D to give better estimate for real wire extrapolation
 
@@ -96,17 +94,20 @@ with open('settings.json', 'r') as file:
     settings = json.load(file)
 
 # Access the settings for the given simulation number
-if str(simnum) in settings:  # Convert simnum to string for matching keys
-    sim_settings = settings[str(simnum)]
-    gridx = sim_settings['gridx']
-    gridy = sim_settings['gridy']
-    gridz = sim_settings['gridz']
-    speedup = sim_settings['speedup']
-    pulse_width = sim_settings['pulse_width']
-    num_steps = sim_settings['num_steps']
-else:
+if str(simnum) not in settings:  # Convert simnum to string for matching keys
     print(f"No settings found for simulation number {simnum}")
-    # Handle the case where there are no settings for the provided simnum
+    sys.exit(2)     # Exit with error code
+
+sim_settings = settings[str(simnum)]
+gridx = sim_settings.get('gridx', 100 )
+gridy = sim_settings.get('gridy', 40 )
+gridz = sim_settings.get('gridz', 40 )
+speedup = sim_settings.get('speedup', 50)
+pulse_width = sim_settings.get('pulse_width', 40 )
+num_steps = sim_settings.get('num_steps', 2000 )
+forcecalc = sim_settings.get('forcecalc', 1 )               # 1 for CUDA, 2 chunked, 3 nearby, 4 call 
+reverse_factor = sim_settings.get('reverse_factor', -0.95)  # when hits side of the wire is reflected - -1=100% and -0.95=95% velocity after reflected
+initialize_velocities= sim_settings.get('initialize_velocities', False) # can have electrons initialized to moving if True and not moving if False
 
 
 DisplaySteps = 5000  # every so many simulation steps we call the visualize code
@@ -127,7 +128,6 @@ initial_radius = 5.29e-11 #  initial electron radius for hydrogen atom - got at 
 pulse_sinwave = False  # True if pulse should be sin wave
 pulsehalf=False    # True to only pulse half the plane
 
-initialize_velocities=False          # can have electrons initialized to moving if True and not moving if False
 
 # bounds format is  ((minx,  maxx) , (miny, maxy), (minz, maxz))
 bounds = ((0, gridx*initial_spacing), (0, gridy*initial_spacing), (0, gridz*initial_spacing))
