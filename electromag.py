@@ -87,6 +87,7 @@ effective_electron_mass = electron_mass   #  default is the same
 electron_thermal_speed = 1.1e6            # meters per second
 bounce_distance = 1e-10                   # closer than this and we make electrons bounce off each other
 forcecalc = 1            # 1 for CUDA, 2 chunked, 3 nearby, 4 call 
+reverse_factor = -0.95   # when hits side of the wire is reflected - -1=100% and -0.95=95% velocity after reflected
 
 # Making wider wires have deeper pulses so scaling is 3D to give better estimate for real wire extrapolation
 
@@ -727,22 +728,20 @@ extern "C" __global__ void calculate_forces(const double3* electron_positions, c
                 if (threadIdx.x == 0 && blockIdx.x == 0 && j == 8)     
                     printf("speed_ratio =%.15lf\\n", speed_ratio);
 
+                double speed_ratio_bounded = fmin(0.5, fabs(speed_ratio));  // so positive and bounded between 0 and 0.5
+
                 // Use the dot product to determine if the electrons are moving towards or away from each other
                 bool movingTowardsEachOther = dot_product < 0;
 
                 // Adjust the adjustment_factor based on the direction of movement
                 // Increase when moving towards each other, decrease when moving away
                 if (movingTowardsEachOther) {
-                    // Electrons moving towards each other
-                    adjustment_factor = 1.0 + fabs(speed_ratio); // Ensure it's always positive and increases the force
+                    adjustment_factor = 1.0 + speed_ratio_bounded; // increases the force if moving towards each other
                 } else {
-                    // Electrons moving away from each other
-                    adjustment_factor = 1.0 - fabs(speed_ratio); // Reduce the force
+                    adjustment_factor = 1.0 - speed_ratio_bounded; // Reduce the force if moving away from each other
                 }
 
-
-                // Avoid negative or excessively large adjustment factors
-                //adjustment_factor = max(0.1, min(adjustment_factor, 2.0));
+                // adjustment_factor should now be between 0.5 and 1.5 
                 if (threadIdx.x == 0 && blockIdx.x == 0 && j == 8)     
                     printf("adjustment_factor=%.15lf\\n", adjustment_factor);
 
@@ -758,7 +757,7 @@ extern "C" __global__ void calculate_forces(const double3* electron_positions, c
             printf("Electron %d Force: x=%e, y=%e, z=%e\\n", i, force.x, force.y, force.z);
          }
 
-        // Apply the calculated forces
+        // Apply the calculated forces   forces[i]=force     - probably good enough
         atomicAdd(&forces[i].x, force.x);
         atomicAdd(&forces[i].y, force.y);
         atomicAdd(&forces[i].z, force.z);
@@ -835,12 +834,12 @@ def update_pv(dt):
         # Check and apply upper boundary conditions
         over_max = electron_positions[:, dim] > bounds[dim][1]   # 1 holds max
         electron_positions[over_max, dim] = bounds[dim][1]  # Set to max bound
-        electron_velocities[over_max, dim] *= -1  # Reverse velocity
+        electron_velocities[over_max, dim] *= reverse_factor  # Reverse velocity
 
         # Check and apply lower boundary conditions
         below_min = electron_positions[:, dim] < bounds[dim][0]  # 0 holds min
         electron_positions[below_min, dim] = bounds[dim][0]  # Set to min bound
-        electron_velocities[below_min, dim] *= -1  # Reverse velocity
+        electron_velocities[below_min, dim] *= reverse_factor  # Reverse velocity
 
     
     # Step 1: Shift all past positions to the right by one position
