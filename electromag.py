@@ -724,6 +724,8 @@ extern "C" __global__ void calculate_forces(const double3* electron_positions, c
                 
                 // Compute the magnitude of the relative velocity scaled by the speed of light
                 double speed_ratio = relative_velocity_magnitude / speed_of_light;
+                if (threadIdx.x == 0 && blockIdx.x == 0 && j == 8)     
+                    printf("speed_ratio =%.15lf\\n", speed_ratio);
 
                 // Use the dot product to determine if the electrons are moving towards or away from each other
                 bool movingTowardsEachOther = dot_product < 0;
@@ -742,7 +744,7 @@ extern "C" __global__ void calculate_forces(const double3* electron_positions, c
                 // Avoid negative or excessively large adjustment factors
                 //adjustment_factor = max(0.1, min(adjustment_factor, 2.0));
                 if (threadIdx.x == 0 && blockIdx.x == 0 && j == 8)     
-                    printf("adjustment_factor=%e\\n", adjustment_factor);
+                    printf("adjustment_factor=%.15lf\\n", adjustment_factor);
 
                 double coulomb = adjustment_factor * coulombs_constant * electron_charge * electron_charge / dist_sq; // dist_sq is non zero
 
