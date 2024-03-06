@@ -699,7 +699,7 @@ extern "C" __global__ void calculate_forces(const double3* electron_positions, c
                     current_position.z - delayed_position.z);
 
                 double dist_sq = r.x * r.x + r.y * r.y + r.z * r.z;
-                dist_sq = max(dist_sq, 1.0e-20); // avoid divide by zero
+                dist_sq = max(dist_sq, 1.0e-30); // avoid divide by zero
 
                 double len_inv = rsqrt(dist_sq); // reciprocal square root
                 double3 normalized_r = make_double3(r.x * len_inv, r.y * len_inv, r.z * len_inv);
@@ -716,21 +716,35 @@ extern "C" __global__ void calculate_forces(const double3* electron_positions, c
 
                 double relative_velocity_magnitude = sqrt(relative_velocity.x * relative_velocity.x +
                                            relative_velocity.y * relative_velocity.y +
-                                           relative_velocity.z * relative_velocity.z + 1.0e-20); // Added epsilon to avoid division by zero
+                                           relative_velocity.z * relative_velocity.z + 1.0e-50); // Added epsilon to avoid division by zero
 
                 // Ensure dot_product is scaled properly relative to the magnitudes and speed of light
                 // Adjustment_factor should be greater than 1 if coming together and less than 1 if moving away 
                 double adjustment_factor = 1.0; // Default to no adjustment
-                if (dot_product < 0) { // Moving towards each other, increase force
-                    adjustment_factor += fabs(dot_product) / (relative_velocity_magnitude * speed_of_light);
-                } else { // Moving apart, decrease force
-                    adjustment_factor -= fabs(dot_product) / (relative_velocity_magnitude * speed_of_light);
+                
+                // Compute the magnitude of the relative velocity scaled by the speed of light
+                double speed_ratio = relative_velocity_magnitude / speed_of_light;
+
+                // Use the dot product to determine if the electrons are moving towards or away from each other
+                bool movingTowardsEachOther = dot_product < 0;
+
+                // Adjust the adjustment_factor based on the direction of movement
+                // Increase when moving towards each other, decrease when moving away
+                if (movingTowardsEachOther) {
+                    // Electrons moving towards each other
+                    adjustment_factor = 1.0 + fabs(speed_ratio); // Ensure it's always positive and increases the force
+                } else {
+                    // Electrons moving away from each other
+                    adjustment_factor = 1.0 - fabs(speed_ratio); // Reduce the force
                 }
+
 
                 // Avoid negative or excessively large adjustment factors
                 //adjustment_factor = max(0.1, min(adjustment_factor, 2.0));
+                if (threadIdx.x == 0 && blockIdx.x == 0 && j == 8)     
+                    printf("adjustment_factor=%e\\n", adjustment_factor);
 
-                double coulomb = coulombs_constant * electron_charge * electron_charge / (dist_sq + 1.0e-60) * adjustment_factor; // Added epsilon to avoid division by zero
+                double coulomb = adjustment_factor * coulombs_constant * electron_charge * electron_charge / dist_sq; // dist_sq is non zero
 
                 force.x += coulomb * normalized_r.x;
                 force.y += coulomb * normalized_r.y;
