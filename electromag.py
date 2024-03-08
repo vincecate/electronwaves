@@ -107,6 +107,7 @@ pulse_width = sim_settings.get('pulse_width', 40 )
 num_steps = sim_settings.get('num_steps', 2000 )
 forcecalc = sim_settings.get('forcecalc', 1 )               # 1 for CUDA, 2 chunked, 3 nearby, 4 call 
 reverse_factor = sim_settings.get('reverse_factor', -0.95)  # when hits side of the wire is reflected - -1=100% and -0.95=95% velocity after reflected
+search_type= sim_settings.get('search_type', 1)  # when hits side of the wire is reflected - -1=100% and -0.95=95% velocity after reflected
 initialize_velocities= sim_settings.get('initialize_velocities', False) # can have electrons initialized to moving if True and not moving if False
 
 
@@ -147,7 +148,7 @@ dt = speedup*proprange*initial_spacing/c/num_steps  # would like total simulatio
 
 
 # Make string of some settings to put on output graph 
-sim_settings = f"simnum {simnum} gridx {gridx} gridy {gridy} gridz {gridz} speedup {speedup} \n Spacing: {initial_spacing:.8e} Pulse Width {pulse_width} ElcSpeed {electron_thermal_speed:.8e} Steps: {num_steps} dt: {dt:.8e}"
+sim_settings = f"simnum {simnum} gridx {gridx} gridy {gridy} gridz {gridz} speedup {speedup} \n Spacing: {initial_spacing:.8e} Pulse Width {pulse_width} ElcSpeed {electron_thermal_speed:.8e} Steps: {num_steps} dt: {dt:.8e} iv:{initialize_velocities} st:{search_type}"
 
 def GPUMem():
     # Get total and free memory in bytes
@@ -620,9 +621,31 @@ def calculate_forces_all():
 kernel_code = '''
 #include <math_functions.h>
 
+__device__ double distance3(double3 pos1, double3 pos2) {
+        // Calculate the Euclidean distance between the current and past positions
+        double dx = pos1.x - pos2.x;
+        double dy = pos1.y - pos2.y;
+        double dz = pos1.z - pos2.z;
+        double distance = sqrt(dx * dx + dy * dy + dz * dz);
+        return(distance)
+}
 
 // Find how far back in history is best match of distance and delay from speed of light
-__device__ int find_best_delay_match_position(const double3 current_position, const double3* historical_positions, int history_slices, double dt) {
+__device__ int find_best_delay_position_linear(const double3 current_position, const double3* historical_positions, int history_slices, double dt) {
+    int left = 0;
+    int right = history_slices - 1;
+    const double speed_of_light = 299792458; // Speed of light in meters per second
+
+    double distance = distance3(current_position, historical_positions[0]);
+    double ideal_travel_time = distance / speed_of_light;
+    int guess = ideal_travel_time / dt
+    guess = max(guess, 0)
+    guess = min(guess, right)
+    return(guess)
+}
+
+// Find how far back in history is best match of distance and delay from speed of light
+__device__ int find_best_delay_position_binary(const double3 current_position, const double3* historical_positions, int history_slices, double dt) {
     int left = 0;
     int right = history_slices - 1;
     const double speed_of_light = 299792458; // Speed of light in meters per second
@@ -632,13 +655,7 @@ __device__ int find_best_delay_match_position(const double3 current_position, co
         if (mid == left || mid == right)
             return mid;                   // we are at the end
 
-        double3 past_position = historical_positions[mid];
-        // Calculate the Euclidean distance between the current and past positions
-        double dx = current_position.x - past_position.x;
-        double dy = current_position.y - past_position.y;
-        double dz = current_position.z - past_position.z;
-        double distance = sqrt(dx * dx + dy * dy + dz * dz);
-
+        double distance = distance3(current_position, historical_positions[mid]);
 
         // Calculate the time it takes for light to travel this distance
         double ideal_travel_time = distance / speed_of_light;
@@ -673,7 +690,8 @@ extern "C" __global__ void calculate_forces(const double3* electron_positions, c
                                 int num_electrons,
                                 double coulombs_constant,
                                 double electron_charge,
-                                double dt) {
+                                double dt,
+                                int search_type) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     const double speed_of_light = 299792458.0; // Speed of light in meters per second
 
@@ -687,7 +705,12 @@ extern "C" __global__ void calculate_forces(const double3* electron_positions, c
 
         for (int j = 0; j < num_electrons; j++) {
             if (i != j) {
-                int best_delay_index = find_best_delay_match_position(current_position, &electron_past_positions[j * past_positions_count], past_positions_count, dt);
+                int best_delay_index;
+                if (search_type == 1){
+                    best_delay_index = find_best_delay_position_binary(current_position, &electron_past_positions[j * past_positions_count], past_positions_count, dt);
+                } else {
+                  t best_delay_index = find_best_delay_position_linear(current_position, &electron_past_positions[j * past_positions_count], past_positions_count, dt);
+                }
                 if (threadIdx.x == 0 && blockIdx.x == 0 && j == 8)     
                     printf("best_delay_index %d\\n", best_delay_index);   // one sample to see it changes
 
@@ -782,7 +805,7 @@ blockspergrid = math.ceil(num_electrons/threadsperblock)
 #   forces = cp.zeros((num_electrons, 3))
 #
 def calculate_forces_cuda():
-    global electron_positions, electron_velocities, electron_past_positions, electron_past_velocities, past_positions_count, forces, num_electrons, coulombs_constant, electron_charge, dt
+    global electron_positions, electron_velocities, electron_past_positions, electron_past_velocities, past_positions_count, forces, num_electrons, coulombs_constant, electron_charge, dt, search_type
     # Launch kernel with the corrected arguments passing
     start_gpu = cp.cuda.Event()
     end_gpu = cp.cuda.Event()
@@ -793,7 +816,7 @@ def calculate_forces_cuda():
         start_gpu.record()
         calculate_forces(grid=(blockspergrid, 1, 1),
                      block=(threadsperblock, 1, 1),
-                     args=(electron_positions, electron_velocities, electron_past_positions, electron_past_velocities, past_positions_count, forces, num_electrons, coulombs_constant, electron_charge,dt))
+                     args=(electron_positions, electron_velocities, electron_past_positions, electron_past_velocities, past_positions_count, forces, num_electrons, coulombs_constant, electron_charge,dt, search_type))
         cp.cuda.Device().synchronize()    #  Let this finish before we do anything else
 
         end_gpu.record()

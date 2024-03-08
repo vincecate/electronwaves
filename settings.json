@@ -94,6 +94,46 @@
     "speedup": 50,
     "pulse_width": 30,
     "num_steps": 2000
+  },
+  "13": {
+    "gridx": 100,
+    "gridy": 30,
+    "gridz": 30,
+    "speedup": 50,
+    "pulse_width": 30,
+    "initialize_velocities": True,
+    "search_type": 1,
+    "num_steps": 2000
+  },
+  "14": {
+    "gridx": 100,
+    "gridy": 30,
+    "gridz": 30,
+    "speedup": 50,
+    "pulse_width": 30,
+    "initialize_velocities": False,
+    "search_type": 1,
+    "num_steps": 2000
+  },
+  "15": {
+    "gridx": 100,
+    "gridy": 30,
+    "gridz": 30,
+    "speedup": 50,
+    "pulse_width": 30,
+    "initialize_velocities": True,
+    "search_type": 2,
+    "num_steps": 2000
+  },
+  "16": {
+    "gridx": 100,
+    "gridy": 30,
+    "gridz": 30,
+    "speedup": 50,
+    "pulse_width": 30,
+    "initialize_velocities": False,
+    "search_type": 2,
+    "num_steps": 2000
   }
 }
 
