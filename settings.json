@@ -101,7 +101,7 @@
     "gridz": 30,
     "speedup": 50,
     "pulse_width": 30,
-    "initialize_velocities": True,
+    "initialize_velocities": true,
     "search_type": 1,
     "num_steps": 2000
   },
@@ -111,7 +111,7 @@
     "gridz": 30,
     "speedup": 50,
     "pulse_width": 30,
-    "initialize_velocities": False,
+    "initialize_velocities": false,
     "search_type": 1,
     "num_steps": 2000
   },
@@ -121,7 +121,7 @@
     "gridz": 30,
     "speedup": 50,
     "pulse_width": 30,
-    "initialize_velocities": True,
+    "initialize_velocities": true,
     "search_type": 2,
     "num_steps": 2000
   },
@@ -131,7 +131,7 @@
     "gridz": 30,
     "speedup": 50,
     "pulse_width": 30,
-    "initialize_velocities": False,
+    "initialize_velocities": false,
     "search_type": 2,
     "num_steps": 2000
   }

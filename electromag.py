@@ -627,21 +627,19 @@ __device__ double distance3(double3 pos1, double3 pos2) {
         double dy = pos1.y - pos2.y;
         double dz = pos1.z - pos2.z;
         double distance = sqrt(dx * dx + dy * dy + dz * dz);
-        return(distance)
+        return(distance);
 }
 
 // Find how far back in history is best match of distance and delay from speed of light
 __device__ int find_best_delay_position_linear(const double3 current_position, const double3* historical_positions, int history_slices, double dt) {
-    int left = 0;
-    int right = history_slices - 1;
     const double speed_of_light = 299792458; // Speed of light in meters per second
 
     double distance = distance3(current_position, historical_positions[0]);
     double ideal_travel_time = distance / speed_of_light;
-    int guess = ideal_travel_time / dt
-    guess = max(guess, 0)
-    guess = min(guess, right)
-    return(guess)
+    int guess = ideal_travel_time / dt;
+    guess = max(guess, 0);
+    guess = min(guess, history_slices - 1);
+    return(guess);
 }
 
 // Find how far back in history is best match of distance and delay from speed of light
@@ -709,7 +707,7 @@ extern "C" __global__ void calculate_forces(const double3* electron_positions, c
                 if (search_type == 1){
                     best_delay_index = find_best_delay_position_binary(current_position, &electron_past_positions[j * past_positions_count], past_positions_count, dt);
                 } else {
-                  t best_delay_index = find_best_delay_position_linear(current_position, &electron_past_positions[j * past_positions_count], past_positions_count, dt);
+                    best_delay_index = find_best_delay_position_linear(current_position, &electron_past_positions[j * past_positions_count], past_positions_count, dt);
                 }
                 if (threadIdx.x == 0 && blockIdx.x == 0 && j == 8)     
                     printf("best_delay_index %d\\n", best_delay_index);   // one sample to see it changes
