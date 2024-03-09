@@ -691,7 +691,7 @@ extern "C" __global__ void calculate_forces(const double3* electron_positions, c
                                 double electron_charge,
                                 double dt,
                                 int search_type,
-                                bool used_lorentz) {
+                                bool use_lorentz) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     const double speed_of_light = 299792458.0; // Speed of light in meters per second
 

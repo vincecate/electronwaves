@@ -1,0 +1,7 @@
+#!/bin/bash
+
+grep best_delay nohup.out  | wc -l
+grep best_delay nohup.out  | sort -u
+grep adjustment_factor nohup.out | sort -u
+grep speed_ratio nohup.out | sort -u
+grep gamma nohup.out | sort -u

@@ -1,0 +1,11 @@
+#!/bin/bash
+
+grepnkill dask
+grepnkill python
+sleep 5
+grepnkill dask
+grepnkill python
+sleep 5
+ps -auxww | grep -i dask
+ps -auxww | grep -i python
+
