@@ -111,7 +111,7 @@ search_type= sim_settings.get('search_type', 1)  # 1 is binary search 2 is "twos
 initialize_velocities= sim_settings.get('initialize_velocities', False) # can have electrons initialized to moving if True and not moving if False
 use_lorentz= sim_settings.get('use_lorentz', True) # use Lorentz transformation on coulombic force if true 
 output_type = sim_settings.get('output_type', "density") # Can plot density or drift
-filename_load = sim_settings.get('filename_save', "none") # Can save or load electron positions and velocities - need right num_electrons
+filename_load = sim_settings.get('filename_load', "none") # Can save or load electron positions and velocities - need right num_electrons
 filename_save = sim_settings.get('filename_save', "simulation.data") # Can save or load electron positions and velocities - need right num_electrons
 
 
@@ -199,13 +199,13 @@ def save_arrays():
     np.savez_compressed(filename_save, positions=electron_positions_np, velocities=electron_velocities_np)
 
 def load_arrays():
-    global filename_save, electron_positions, electron_velocities
+    global filename_load, electron_positions, electron_velocities
 
     """
     Loads the electron positions and velocities from a file.
 
     Parameters:
-    - filename_save: The filename from where the arrays will be loaded.
+    - filename_load: The filename from where the arrays will be loaded.
 
     Returns:
     Tuple of CuPy arrays: (electron_positions, electron_velocities)

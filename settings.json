@@ -133,7 +133,7 @@
     "pulse_width": 30,
     "initialize_velocities": false,
     "search_type": 2,
-    "state_filename": "simulation.16.data",
+    "filename_save": "simulation.16.data",
     "num_steps": 2000
   }
 }
