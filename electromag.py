@@ -109,6 +109,7 @@ forcecalc = sim_settings.get('forcecalc', 1 )               # 1 for CUDA, 2 chun
 reverse_factor = sim_settings.get('reverse_factor', -0.95)  # when hits side of the wire is reflected - -1=100% and -0.95=95% velocity after reflected
 search_type= sim_settings.get('search_type', 1)  # when hits side of the wire is reflected - -1=100% and -0.95=95% velocity after reflected
 initialize_velocities= sim_settings.get('initialize_velocities', False) # can have electrons initialized to moving if True and not moving if False
+use_lorentz= sim_settings.get('use_lorentz', True) # use Lorentz transformation on coulombic force if true 
 
 
 DisplaySteps = 5000  # every so many simulation steps we call the visualize code
@@ -689,7 +690,8 @@ extern "C" __global__ void calculate_forces(const double3* electron_positions, c
                                 double coulombs_constant,
                                 double electron_charge,
                                 double dt,
-                                int search_type) {
+                                int search_type,
+                                bool used_lorentz) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     const double speed_of_light = 299792458.0; // Speed of light in meters per second
 
@@ -737,44 +739,47 @@ extern "C" __global__ void calculate_forces(const double3* electron_positions, c
                                            relative_velocity.z * relative_velocity.z + 1.0e-50); // Added epsilon to avoid division by zero
                 relative_velocity_magnitude = min(relative_velocity_magnitude, 0.99*speed_of_light);
 
+                double coulomb;
+                if (use_lorentz) {
+                    // Calculate the Lorentz factor (gamma)
+                    double gamma = 1.0 / sqrt(1.0 - (relative_velocity_magnitude * relative_velocity_magnitude) / (speed_of_light * speed_of_light));
+                    if (threadIdx.x == 0 && blockIdx.x == 0 && j == 8)     
+                        printf("gamma  =%.15lf\\n", gamma);
+                    coulomb = gamma * coulombs_constant * electron_charge * electron_charge / dist_sq;
+                } else {
+                    double dot_product = relative_velocity.x * normalized_r.x +
+                                         relative_velocity.y * normalized_r.y +
+                                         relative_velocity.z * normalized_r.z;
 
-                //double dot_product = relative_velocity.x * normalized_r.x +
-                //                     relative_velocity.y * normalized_r.y +
-                //                     relative_velocity.z * normalized_r.z;
-
-                // Ensure dot_product is scaled properly relative to the magnitudes and speed of light
-                // Adjustment_factor should be greater than 1 if coming together and less than 1 if moving away 
-                //double adjustment_factor = 1.0; // Default to no adjustment
+                    // Ensure dot_product is scaled properly relative to the magnitudes and speed of light
+                    // Adjustment_factor should be greater than 1 if coming together and less than 1 if moving away 
+                    double adjustment_factor = 1.0; // Default to no adjustment
                 
-                // Compute the magnitude of the relative velocity scaled by the speed of light
-                //double speed_ratio = relative_velocity_magnitude / speed_of_light;
-                //if (threadIdx.x == 0 && blockIdx.x == 0 && j == 8)     
-                //    printf("speed_ratio =%.15lf\\n", speed_ratio);
+                    // Compute the magnitude of the relative velocity scaled by the speed of light
+                    double speed_ratio = relative_velocity_magnitude / speed_of_light;
+                    if (threadIdx.x == 0 && blockIdx.x == 0 && j == 8)     
+                        printf("speed_ratio =%.15lf\\n", speed_ratio);
 
-                //double speed_ratio_bounded = fmin(0.5, fabs(speed_ratio));  // so positive and bounded between 0 and 0.5
+                    double speed_ratio_bounded = fmin(0.5, fabs(speed_ratio));  // so positive and bounded between 0 and 0.5
 
-                // Use the dot product to determine if the electrons are moving towards or away from each other
-                //bool movingTowardsEachOther = dot_product < 0;
+                    // Use the dot product to determine if the electrons are moving towards or away from each other
+                    bool movingTowardsEachOther = dot_product < 0;
 
-                // Adjust the adjustment_factor based on the direction of movement
-                // Increase when moving towards each other, decrease when moving away
-                //if (movingTowardsEachOther) {
-                //    adjustment_factor = 1.0 + speed_ratio_bounded; // increases the force if moving towards each other
-                //} else {
-                //    adjustment_factor = 1.0 - speed_ratio_bounded; // Reduce the force if moving away from each other
-                //}
+                    // Adjust the adjustment_factor based on the direction of movement
+                    // Increase when moving towards each other, decrease when moving away
+                    if (movingTowardsEachOther) {
+                        adjustment_factor = 1.0 + speed_ratio_bounded; // increases the force if moving towards each other
+                    } else {
+                        adjustment_factor = 1.0 - speed_ratio_bounded; // Reduce the force if moving away from each other
+                    }
 
-                // Calculate the Lorentz factor (gamma)
-                double gamma = 1.0 / sqrt(1.0 - (relative_velocity_magnitude * relative_velocity_magnitude) / (speed_of_light * speed_of_light));
-                if (threadIdx.x == 0 && blockIdx.x == 0 && j == 8)     
-                    printf("gamma  =%.15lf\\n", gamma);
-                double coulomb = gamma * coulombs_constant * electron_charge * electron_charge / dist_sq;
 
-                // adjustment_factor should now be between 0.5 and 1.5 
-                //if (threadIdx.x == 0 && blockIdx.x == 0 && j == 8)     
-                //    printf("adjustment_factor=%.15lf\\n", adjustment_factor);
+                    // adjustment_factor should now be between 0.5 and 1.5 
+                    if (threadIdx.x == 0 && blockIdx.x == 0 && j == 8)     
+                        printf("adjustment_factor=%.15lf\\n", adjustment_factor);
 
-                //double coulomb = adjustment_factor * coulombs_constant * electron_charge * electron_charge / dist_sq; // dist_sq is non zero
+                    coulomb = adjustment_factor * coulombs_constant * electron_charge * electron_charge / dist_sq; // dist_sq is non zero
+                }
 
                 force.x += coulomb * normalized_r.x;
                 force.y += coulomb * normalized_r.y;
@@ -811,7 +816,7 @@ blockspergrid = math.ceil(num_electrons/threadsperblock)
 #   forces = cp.zeros((num_electrons, 3))
 #
 def calculate_forces_cuda():
-    global electron_positions, electron_velocities, electron_past_positions, electron_past_velocities, past_positions_count, forces, num_electrons, coulombs_constant, electron_charge, dt, search_type
+    global electron_positions, electron_velocities, electron_past_positions, electron_past_velocities, past_positions_count, forces, num_electrons, coulombs_constant, electron_charge, dt, search_type, use_lorentz
     # Launch kernel with the corrected arguments passing
     start_gpu = cp.cuda.Event()
     end_gpu = cp.cuda.Event()
@@ -822,7 +827,7 @@ def calculate_forces_cuda():
         start_gpu.record()
         calculate_forces(grid=(blockspergrid, 1, 1),
                      block=(threadsperblock, 1, 1),
-                     args=(electron_positions, electron_velocities, electron_past_positions, electron_past_velocities, past_positions_count, forces, num_electrons, coulombs_constant, electron_charge,dt, search_type))
+                     args=(electron_positions, electron_velocities, electron_past_positions, electron_past_velocities, past_positions_count, forces, num_electrons, coulombs_constant, electron_charge,dt, search_type, use_lorentz))
         cp.cuda.Device().synchronize()    #  Let this finish before we do anything else
 
         end_gpu.record()
