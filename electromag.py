@@ -936,10 +936,10 @@ def main():
         if step % WireSteps == 0:
             # WireStatus=calculate_wire_offset(electron_positions)
             # future = client.submit(visualize_wire, "Offset",  WireStatus, step, t)
-            if (output_type == "density")
+            if (output_type == "density"):
                 WireStatus=calcualte_wire_density(electron_positions)
                 future = client.submit(visualize_wire, "Density", WireStatus, step, t)
-            if (output_type == "drift")
+            if (output_type == "drift"):
                 WireStatus=calculate_drift_velocities(electron_positions, electron_velocities)
                 future = client.submit(visualize_wire, "Velocity", WireStatus, step, t)
             futures.append(future)
