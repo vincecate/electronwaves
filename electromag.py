@@ -110,6 +110,7 @@ reverse_factor = sim_settings.get('reverse_factor', -0.95)  # when hits side of 
 search_type= sim_settings.get('search_type', 1)  # 1 is binary search 2 is "twoshot"
 initialize_velocities= sim_settings.get('initialize_velocities', False) # can have electrons initialized to moving if True and not moving if False
 use_lorentz= sim_settings.get('use_lorentz', True) # use Lorentz transformation on coulombic force if true 
+output_type = sim_settings.get('output_type', "density") # Can plot density or drift
 
 
 DisplaySteps = 5000  # every so many simulation steps we call the visualize code
@@ -935,10 +936,12 @@ def main():
         if step % WireSteps == 0:
             # WireStatus=calculate_wire_offset(electron_positions)
             # future = client.submit(visualize_wire, "Offset",  WireStatus, step, t)
-            WireStatus=calcualte_wire_density(electron_positions)
-            future = client.submit(visualize_wire, "Density", WireStatus, step, t)
-            #WireStatus=calculate_drift_velocities(electron_positions, electron_velocities)
-            #future = client.submit(visualize_wire, "Velocity", WireStatus, step, t)
+            if (output_type == "density")
+                WireStatus=calcualte_wire_density(electron_positions)
+                future = client.submit(visualize_wire, "Density", WireStatus, step, t)
+            if (output_type == "drift")
+                WireStatus=calculate_drift_velocities(electron_positions, electron_velocities)
+                future = client.submit(visualize_wire, "Velocity", WireStatus, step, t)
             futures.append(future)
         if step % DisplaySteps == 0:
             print("Display", step)

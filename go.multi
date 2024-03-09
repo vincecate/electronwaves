@@ -14,7 +14,7 @@ else
     mkdir "$DIR"
 fi
 
-for i in 14 15 16; do
+for i in 15 16; do
   echo "Iteration with i=$i"
   date
   ./go $i
