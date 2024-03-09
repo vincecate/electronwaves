@@ -107,7 +107,7 @@ pulse_width = sim_settings.get('pulse_width', 40 )
 num_steps = sim_settings.get('num_steps', 2000 )
 forcecalc = sim_settings.get('forcecalc', 1 )               # 1 for CUDA, 2 chunked, 3 nearby, 4 call 
 reverse_factor = sim_settings.get('reverse_factor', -0.95)  # when hits side of the wire is reflected - -1=100% and -0.95=95% velocity after reflected
-search_type= sim_settings.get('search_type', 1)  # when hits side of the wire is reflected - -1=100% and -0.95=95% velocity after reflected
+search_type= sim_settings.get('search_type', 1)  # 1 is binary search 2 is "twoshot"
 initialize_velocities= sim_settings.get('initialize_velocities', False) # can have electrons initialized to moving if True and not moving if False
 use_lorentz= sim_settings.get('use_lorentz', True) # use Lorentz transformation on coulombic force if true 
 
@@ -622,6 +622,8 @@ def calculate_forces_all():
 kernel_code = '''
 #include <math_functions.h>
 
+const double speed_of_light = 299792458; // Speed of light in meters per second
+
 __device__ double distance3(double3 pos1, double3 pos2) {
         // Calculate the Euclidean distance between the current and past positions
         double dx = pos1.x - pos2.x;
@@ -632,14 +634,21 @@ __device__ double distance3(double3 pos1, double3 pos2) {
 }
 
 // Find how far back in history is best match of distance and delay from speed of light
-__device__ int find_best_delay_position_linear(const double3 current_position, const double3* historical_positions, int history_slices, double dt) {
-    const double speed_of_light = 299792458; // Speed of light in meters per second
+// Electrons usually don't move much per time slice so this probably gets very close very fast
+__device__ int find_best_delay_position_2shot(const double3 current_position, const double3* historical_positions, int history_slices, double dt) {
 
-    double distance = distance3(current_position, historical_positions[0]);
-    double ideal_travel_time = distance / speed_of_light;
-    int guess = ideal_travel_time / dt;
-    guess = max(guess, 0);
-    guess = min(guess, history_slices - 1);
+    int guess = 0;              // In historical_positons 0 has the most recent positon for that electron
+    int numshots = 2;
+    double distance;
+    double ideal_travel_time;
+    for (int i=0; i<numshots; i++) {
+        distance = distance3(current_position, historical_positions[guess]); // see distance at time guess 
+        ideal_travel_time = distance / speed_of_light;
+        guess = ideal_travel_time / dt;                                      // and see how many time slices back in time that should be
+        guess = max(guess, 0);                                               // bounds checking
+        guess = min(guess, history_slices - 1);
+    }
+
     return(guess);
 }
 
@@ -647,7 +656,6 @@ __device__ int find_best_delay_position_linear(const double3 current_position, c
 __device__ int find_best_delay_position_binary(const double3 current_position, const double3* historical_positions, int history_slices, double dt) {
     int left = 0;
     int right = history_slices - 1;
-    const double speed_of_light = 299792458; // Speed of light in meters per second
 
     while (left < right ) {
         int mid = (left + right) / 2;
@@ -709,7 +717,7 @@ extern "C" __global__ void calculate_forces(const double3* electron_positions, c
                 if (search_type == 1){
                     best_delay_index = find_best_delay_position_binary(current_position, &electron_past_positions[j * past_positions_count], past_positions_count, dt);
                 } else {
-                    best_delay_index = find_best_delay_position_linear(current_position, &electron_past_positions[j * past_positions_count], past_positions_count, dt);
+                    best_delay_index = find_best_delay_position_2shot(current_position, &electron_past_positions[j * past_positions_count], past_positions_count, dt);
                 }
                 if (threadIdx.x == 0 && blockIdx.x == 0 && j == 8)     
                     printf("best_delay_index %d\\n", best_delay_index);   // one sample to see it changes
