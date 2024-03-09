@@ -731,42 +731,50 @@ extern "C" __global__ void calculate_forces(const double3* electron_positions, c
                     current_velocity.y - past_velocity.y,
                     current_velocity.z - past_velocity.z);
 
-                double dot_product = relative_velocity.x * normalized_r.x +
-                                     relative_velocity.y * normalized_r.y +
-                                     relative_velocity.z * normalized_r.z;
-
 
                 double relative_velocity_magnitude = sqrt(relative_velocity.x * relative_velocity.x +
                                            relative_velocity.y * relative_velocity.y +
                                            relative_velocity.z * relative_velocity.z + 1.0e-50); // Added epsilon to avoid division by zero
+                relative_velocity_magnitude = min(relative_velocity_magnitude, 0.99*speed_of_light);
+
+
+                //double dot_product = relative_velocity.x * normalized_r.x +
+                //                     relative_velocity.y * normalized_r.y +
+                //                     relative_velocity.z * normalized_r.z;
 
                 // Ensure dot_product is scaled properly relative to the magnitudes and speed of light
                 // Adjustment_factor should be greater than 1 if coming together and less than 1 if moving away 
-                double adjustment_factor = 1.0; // Default to no adjustment
+                //double adjustment_factor = 1.0; // Default to no adjustment
                 
                 // Compute the magnitude of the relative velocity scaled by the speed of light
-                double speed_ratio = relative_velocity_magnitude / speed_of_light;
-                if (threadIdx.x == 0 && blockIdx.x == 0 && j == 8)     
-                    printf("speed_ratio =%.15lf\\n", speed_ratio);
+                //double speed_ratio = relative_velocity_magnitude / speed_of_light;
+                //if (threadIdx.x == 0 && blockIdx.x == 0 && j == 8)     
+                //    printf("speed_ratio =%.15lf\\n", speed_ratio);
 
-                double speed_ratio_bounded = fmin(0.5, fabs(speed_ratio));  // so positive and bounded between 0 and 0.5
+                //double speed_ratio_bounded = fmin(0.5, fabs(speed_ratio));  // so positive and bounded between 0 and 0.5
 
                 // Use the dot product to determine if the electrons are moving towards or away from each other
-                bool movingTowardsEachOther = dot_product < 0;
+                //bool movingTowardsEachOther = dot_product < 0;
 
                 // Adjust the adjustment_factor based on the direction of movement
                 // Increase when moving towards each other, decrease when moving away
-                if (movingTowardsEachOther) {
-                    adjustment_factor = 1.0 + speed_ratio_bounded; // increases the force if moving towards each other
-                } else {
-                    adjustment_factor = 1.0 - speed_ratio_bounded; // Reduce the force if moving away from each other
-                }
+                //if (movingTowardsEachOther) {
+                //    adjustment_factor = 1.0 + speed_ratio_bounded; // increases the force if moving towards each other
+                //} else {
+                //    adjustment_factor = 1.0 - speed_ratio_bounded; // Reduce the force if moving away from each other
+                //}
+
+                // Calculate the Lorentz factor (gamma)
+                double gamma = 1.0 / sqrt(1.0 - (relative_velocity_magnitude * relative_velocity_magnitude) / (speed_of_light * speed_of_light));
+                if (threadIdx.x == 0 && blockIdx.x == 0 && j == 8)     
+                    printf("gamma  =%.15lf\\n", gamma);
+                double coulomb = gamma * coulombs_constant * electron_charge * electron_charge / dist_sq;
 
                 // adjustment_factor should now be between 0.5 and 1.5 
-                if (threadIdx.x == 0 && blockIdx.x == 0 && j == 8)     
-                    printf("adjustment_factor=%.15lf\\n", adjustment_factor);
+                //if (threadIdx.x == 0 && blockIdx.x == 0 && j == 8)     
+                //    printf("adjustment_factor=%.15lf\\n", adjustment_factor);
 
-                double coulomb = adjustment_factor * coulombs_constant * electron_charge * electron_charge / dist_sq; // dist_sq is non zero
+                //double coulomb = adjustment_factor * coulombs_constant * electron_charge * electron_charge / dist_sq; // dist_sq is non zero
 
                 force.x += coulomb * normalized_r.x;
                 force.y += coulomb * normalized_r.y;
