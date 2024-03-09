@@ -111,6 +111,7 @@ search_type= sim_settings.get('search_type', 1)  # 1 is binary search 2 is "twos
 initialize_velocities= sim_settings.get('initialize_velocities', False) # can have electrons initialized to moving if True and not moving if False
 use_lorentz= sim_settings.get('use_lorentz', True) # use Lorentz transformation on coulombic force if true 
 output_type = sim_settings.get('output_type', "density") # Can plot density or drift
+state_filename = sim_settings.get('state_filename', "simulation.data") # Can save or load electron positions and velocities - need right num_electrons
 
 
 DisplaySteps = 5000  # every so many simulation steps we call the visualize code
@@ -174,6 +175,50 @@ forces = cp.zeros((num_electrons, 3))
 past_positions_count = 100
 electron_past_positions = cp.zeros((num_electrons, past_positions_count, 3))   # keeping past positions with current at 0, previos 1, etc
 electron_past_velocities = cp.zeros((num_electrons, past_positions_count, 3))   # keeping past positions with current at 0, previos 1, etc
+
+
+import cupy as cp
+import numpy as np
+
+def save_arrays():
+    global state_filename, electron_positions, electron_velocities
+    """
+    Saves the electron positions and velocities to a file.
+
+    Parameters:
+    - state_filename: The filename where the arrays will be saved.
+    - electron_positions: CuPy array of electron positions.
+    - electron_velocities: CuPy array of electron velocities.
+    """
+    # Convert CuPy arrays to NumPy arrays for saving.
+    electron_positions_np = cp.asnumpy(electron_positions)
+    electron_velocities_np = cp.asnumpy(electron_velocities)
+    
+    # Use numpy's savez to save multiple arrays to a file in compressed format.
+    np.savez_compressed(state_filename, positions=electron_positions_np, velocities=electron_velocities_np)
+
+def load_arrays():
+    global state_filename, electron_positions, electron_velocities
+
+    """
+    Loads the electron positions and velocities from a file.
+
+    Parameters:
+    - state_filename: The filename from where the arrays will be loaded.
+
+    Returns:
+    Tuple of CuPy arrays: (electron_positions, electron_velocities)
+    """
+    # Load the arrays back using numpy's load function.
+    data = np.load(state_filename)
+    
+    # Convert loaded NumPy arrays back to CuPy arrays.
+    electron_positions = cp.asarray(data['positions'])
+    electron_velocities = cp.asarray(data['velocities'])
+    
+    return electron_positions, electron_velocities
+
+
 
 def calculate_collision_velocity(v1, v2, p1, p2):
     """
@@ -981,6 +1026,7 @@ def main():
     future = client.submit(visualize_atoms, copypositions, copyvelocities, step, t) # If we end at 200 we need last output
     futures.append(future)
     wait(futures)
+    save_arrays()
 
 
 
