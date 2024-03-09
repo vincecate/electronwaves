@@ -111,7 +111,8 @@ search_type= sim_settings.get('search_type', 1)  # 1 is binary search 2 is "twos
 initialize_velocities= sim_settings.get('initialize_velocities', False) # can have electrons initialized to moving if True and not moving if False
 use_lorentz= sim_settings.get('use_lorentz', True) # use Lorentz transformation on coulombic force if true 
 output_type = sim_settings.get('output_type', "density") # Can plot density or drift
-state_filename = sim_settings.get('state_filename', "simulation.data") # Can save or load electron positions and velocities - need right num_electrons
+filename_load = sim_settings.get('filename_save', "none") # Can save or load electron positions and velocities - need right num_electrons
+filename_save = sim_settings.get('filename_save', "simulation.data") # Can save or load electron positions and velocities - need right num_electrons
 
 
 DisplaySteps = 5000  # every so many simulation steps we call the visualize code
@@ -181,12 +182,12 @@ import cupy as cp
 import numpy as np
 
 def save_arrays():
-    global state_filename, electron_positions, electron_velocities
+    global filename_save, electron_positions, electron_velocities
     """
     Saves the electron positions and velocities to a file.
 
     Parameters:
-    - state_filename: The filename where the arrays will be saved.
+    - filename_save: The filename where the arrays will be saved.
     - electron_positions: CuPy array of electron positions.
     - electron_velocities: CuPy array of electron velocities.
     """
@@ -195,28 +196,29 @@ def save_arrays():
     electron_velocities_np = cp.asnumpy(electron_velocities)
     
     # Use numpy's savez to save multiple arrays to a file in compressed format.
-    np.savez_compressed(state_filename, positions=electron_positions_np, velocities=electron_velocities_np)
+    np.savez_compressed(filename_save, positions=electron_positions_np, velocities=electron_velocities_np)
 
 def load_arrays():
-    global state_filename, electron_positions, electron_velocities
+    global filename_save, electron_positions, electron_velocities
 
     """
     Loads the electron positions and velocities from a file.
 
     Parameters:
-    - state_filename: The filename from where the arrays will be loaded.
+    - filename_save: The filename from where the arrays will be loaded.
 
     Returns:
     Tuple of CuPy arrays: (electron_positions, electron_velocities)
     """
-    # Load the arrays back using numpy's load function.
-    data = np.load(state_filename)
+
+    if (filename_load != "none"):
+        # Load the arrays back using numpy's load function.
+        data = np.load(filename_load)
     
-    # Convert loaded NumPy arrays back to CuPy arrays.
-    electron_positions = cp.asarray(data['positions'])
-    electron_velocities = cp.asarray(data['velocities'])
+        # Convert loaded NumPy arrays back to CuPy arrays.
+        electron_positions = cp.asarray(data['positions'])
+        electron_velocities = cp.asarray(data['velocities'])
     
-    return electron_positions, electron_velocities
 
 
 
