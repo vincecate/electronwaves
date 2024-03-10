@@ -8,6 +8,17 @@
 # pip install distributed
 # pip install pycuda
 #
+#  We currently 3/9/24 only simulate free electrons but the "displacement current" from bound electrons might be important
+#  We can simulate electrons bound to atoms as electrons on a spring to a point.  So this would not be hard.
+#  Can have an array of flags telling us which electrons are bound
+#  And another array of atom_positions showing where the spring is connected to
+#  This was maxwell's model and so almost certain to work for propagating waves
+#  
+# Gemini:
+#     Electromagnetic waves like light interact much more strongly with bound electrons than typical electrical signals 
+#     in a wire. This is the basis for how materials reflect, refract, and absorb light.
+#  So to do light we expect to need to simulate bound electrons but we can easily do this I think.
+#
 # Visible light falls within a range of wavelengths from approximately 380 nanometers (nm) to about 750 nm. 
 #    About 100 times the distance between air molecules!
 #
@@ -71,6 +82,7 @@ import sys
 import math
 import json
 
+# $1 argument gets saved to simnum so can do batch of several simulations from script
 # Check if at least one argument is provided (excluding the script name)
 if len(sys.argv) > 1:
     simnum = int(sys.argv[1])  # The first argument passed to the script
@@ -79,9 +91,9 @@ else:
     print("No simulation number provided. Exiting.")
     sys.exit(1)  # Exit the script with an error code
 
-cp.random.seed(999)
-# $1 argument gets saved to simnum so can do batch of several simulations from script
-# have a set to try to get projection to speed of light in full size plane wave
+# Setting a random seed makes same run do the same thing
+# cp.random.seed(999)
+
 
 effective_electron_mass = electron_mass   #  default is the same
 electron_thermal_speed = 1.1e6            # meters per second
@@ -172,6 +184,8 @@ chunk_size = gridx*gridy
 electron_positions = cp.zeros((num_electrons, 3))
 electron_velocities = cp.zeros((num_electrons, 3))
 forces = cp.zeros((num_electrons, 3))
+electron_is_bound = cp.zeros(num_electrons, dtype=bool)   # if True then electron is bound to an atom, if flase then free
+electron_atom_center = cp.zeros((num_electrons, 3))       # atom position that spring for bound electron is attached to
 
 past_positions_count = 100
 electron_past_positions = cp.zeros((num_electrons, past_positions_count, 3))   # keeping past positions with current at 0, previos 1, etc
@@ -198,27 +212,45 @@ def save_arrays():
     # Use numpy's savez to save multiple arrays to a file in compressed format.
     np.savez_compressed(filename_save, positions=electron_positions_np, velocities=electron_velocities_np)
 
-def load_arrays():
-    global filename_load, electron_positions, electron_velocities
+    print(f"save_arrays saved to {filename_save}")
 
+   
+def load_arrays():
+    global filename_load, electron_positions, electron_velocities, num_electrons
     """
-    Loads the electron positions and velocities from a file.
+    Loads the electron positions and velocities from a file into NumPy arrays,
+    validates their sizes, and if validation passes, copies them to CuPy arrays.
 
     Parameters:
-    - filename_load: The filename from where the arrays will be loaded.
+    - state_filename: The filename from where the arrays will be loaded.
+    - expected_num_electrons: The expected number of electrons (items) in the arrays.
 
     Returns:
-    Tuple of CuPy arrays: (electron_positions, electron_velocities)
+    - electron_positions_cp: CuPy array of electron positions if validation passes, else None.
+    - electron_velocities_cp: CuPy array of electron velocities if validation passes, else None.
+    - validation_passed: Boolean indicating whether the validation passed.
     """
+    if (filename_load == "none"):
+        print("load_arrays NOT loading from file")
+        return
+    print(f"load_arrays loading from file {filename_load}")
 
-    if (filename_load != "none"):
-        # Load the arrays back using numpy's load function.
-        data = np.load(filename_load)
-    
-        # Convert loaded NumPy arrays back to CuPy arrays.
-        electron_positions = cp.asarray(data['positions'])
-        electron_velocities = cp.asarray(data['velocities'])
-    
+    data = np.load(filename_load)
+    electron_positions_np = data['positions']
+    electron_velocities_np = data['velocities']
+
+    # Validate the size of the loaded arrays
+    positions_correct = electron_positions_np.shape[0] == num_electrons
+    velocities_correct = electron_velocities_np.shape[0] == num_electrons
+
+    if (positions_correct and velocities_correct):                 # If validation passes, convert NumPy arrays to CuPy arrays
+        electron_positions = cp.asarray(electron_positions_np)
+        electron_velocities = cp.asarray(electron_velocities_np)
+    else:
+        print(f"Aborting:  Loading from file {filename_load} did not get right number of electrons ")
+        sys.exit(-1)                                                   # user settings are wrong abort
+    print("load_arrays successful")
+
 
 
 
@@ -343,6 +375,7 @@ def initialize_electrons():
     else:
         electron_velocities = cp.zeros((num_electrons, 3))
 
+    load_arrays()   #   we are not saving past_positions to file so far - if no file it  will not change arrays
     
     # Set all past positions to the current positions
     # We use broadcasting to replicate the current positions across the second dimension of electron_past_positions
@@ -683,21 +716,23 @@ __device__ double distance3(double3 pos1, double3 pos2) {
 
 // Find how far back in history is best match of distance and delay from speed of light
 // Electrons usually don't move much per time slice so this probably gets very close very fast
+// We look at the current position, see how long to go that far at speed of light to get approximate time back in simulation
+//  then go to that far in past and get position at that point in simulation, then make new estimate for distance and time
 __device__ int find_best_delay_position_2shot(const double3 current_position, const double3* historical_positions, int history_slices, double dt) {
 
-    int guess = 0;              // In historical_positons 0 has the most recent positon for that electron
+    int approximation = 0;              // In historical_positons 0 has the most recent positon for that electron
     int numshots = 2;
     double distance;
     double ideal_travel_time;
     for (int i=0; i<numshots; i++) {
-        distance = distance3(current_position, historical_positions[guess]); // see distance at time guess 
+        distance = distance3(current_position, historical_positions[approximation]); // see distance at time approximation 
         ideal_travel_time = distance / speed_of_light;
-        guess = ideal_travel_time / dt;                                      // and see how many time slices back in time that should be
-        guess = max(guess, 0);                                               // bounds checking
-        guess = min(guess, history_slices - 1);
+        approximation = ideal_travel_time / dt;                                      // and see how many time slices back in time that should be
+        approximation = max(approximation, 0);                                               // bounds checking
+        approximation = min(approximation, history_slices - 1);
     }
 
-    return(guess);
+    return(approximation);
 }
 
 // Find how far back in history is best match of distance and delay from speed of light

@@ -135,6 +135,18 @@
     "search_type": 2,
     "filename_save": "simulation.16.data",
     "num_steps": 2000
+  },
+  "17": {
+    "gridx": 100,
+    "gridy": 30,
+    "gridz": 30,
+    "speedup": 50,
+    "pulse_width": 30,
+    "initialize_velocities": false,
+    "search_type": 2,
+    "filename_load": "simulation.16.data.npz",
+    "filename_save": "simulation.17.data",
+    "num_steps": 2000
   }
 }
 
