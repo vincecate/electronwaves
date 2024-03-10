@@ -164,7 +164,7 @@ dt = speedup*proprange*initial_spacing/c/num_steps  # would like total simulatio
 
 
 # Make string of some settings to put on output graph 
-sim_settings = f"simnum {simnum} gridx {gridx} gridy {gridy} gridz {gridz} speedup {speedup} \n Spacing: {initial_spacing:.8e} Pulse Width {pulse_width} ElcSpeed {electron_thermal_speed:.8e} Steps: {num_steps} dt: {dt:.8e} iv:{initialize_velocities} st:{search_type}"
+sim_settings = f"simnum {simnum} gridx {gridx} gridy {gridy} gridz {gridz} speedup {speedup} lorentz {use_lorentz}  \n Spacing: {initial_spacing:.8e} Pulse Width {pulse_width} ElcSpeed {electron_thermal_speed:.8e} Steps: {num_steps} dt: {dt:.8e} iv:{initialize_velocities} st:{search_type}"
 
 def GPUMem():
     # Get total and free memory in bytes
