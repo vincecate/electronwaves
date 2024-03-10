@@ -158,6 +158,19 @@
     "search_type": 2,
     "filename_save": "simulation.18.data",
     "num_steps": 2000
+  },
+  "19": {
+    "gridx": 100,
+    "gridy": 30,
+    "gridz": 30,
+    "speedup": 50,
+    "pulse_width": 30,
+    "initialize_velocities": false,
+    "search_type": 2,
+    "filename_save": "simulation.19.data",
+    "pulse_density":1.05,
+    "output_type":"current",
+    "num_steps": 2000
   }
 }
 

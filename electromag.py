@@ -125,6 +125,7 @@ use_lorentz= sim_settings.get('use_lorentz', True) # use Lorentz transformation 
 output_type = sim_settings.get('output_type', "density") # Can plot density or drift
 filename_load = sim_settings.get('filename_load', "none") # Can save or load electron positions and velocities - need right num_electrons
 filename_save = sim_settings.get('filename_save', "simulation.data") # Can save or load electron positions and velocities - need right num_electrons
+pulse_density = sim_settings.get('pulse_density', 2.0) # Can save or load electron positions and velocities - need right num_electrons
 
 
 DisplaySteps = 5000  # every so many simulation steps we call the visualize code
@@ -346,13 +347,13 @@ def generate_thermal_velocities(num_electrons, temperature=300):
 # past_positions_count = 100
 # electron_past_positions = cp.zeros((num_electrons, past_positions_count, 3))   # keeping past positions with current at 0, previos 1, etc
 def initialize_electrons():
-    global initial_radius, electron_velocities, electron_positions, num_electrons, electron_past_positions
+    global initial_radius, electron_velocities, electron_positions, num_electrons, electron_past_positions, pulse_density
     global initial_spacing, initialize_velocities, electron_speed, pulse_width, electron_thermal_speed, gridx, gridy, gridz
 
     # Calculate the adjusted number of electrons for the pulse and rest regions to match the num_electrons
     # Ensure total electrons do not exceed num_electrons while maintaining higher density in the pulse region
     pulse_volume_ratio = pulse_width / gridx
-    adjusted_pulse_electrons = int(num_electrons * pulse_volume_ratio * 2)  # Double density in pulse region
+    adjusted_pulse_electrons = int(num_electrons * pulse_volume_ratio * pulse_density)  # Double density in pulse region
     rest_electrons = num_electrons - adjusted_pulse_electrons
 
     # Generate random positions for electrons
@@ -571,6 +572,30 @@ def calculate_drift_velocities(epositions, evelocities):
     return average_velocities.get()  # Return in NumPy not CuPy
 
 
+#  density, drift, and current should be one function that saves all 3 things XXXX
+def calculate_current():
+    global electron_positions, electron_velocities, gridx, initial_spacing
+    # Get x positions and x velocities directly from the 2D arrays
+    x_positions = electron_positions[:, 0]  # x component of positions for each electron
+    x_velocities = electron_velocities[:, 0]  # x component of velocity for each electron
+
+    # Convert positions to segment indices
+    segment_indices = cp.floor(x_positions / initial_spacing).astype(cp.int32)
+
+    # Use bincount to sum velocities and count electrons in each segment
+    velocity_sums = cp.bincount(segment_indices, weights=x_velocities, minlength=gridx)
+    electron_counts = cp.bincount(segment_indices, minlength=gridx)
+
+    # Calculate electron density in each segment
+    segment_length = initial_spacing
+    segment_area = segment_length ** 2  # Assuming a square cross-section
+    electron_density = electron_counts / segment_area
+
+    # Calculate current in each segment
+    charge_per_electron = 1.602e-19  # Charge of an electron in coulombs
+    current = electron_density * velocity_sums * charge_per_electron
+
+    return current.get()  # Return in NumPy, not CuPy
 
 
 
@@ -1015,15 +1040,18 @@ def main():
         t = step * dt
         print("In main", step)
         GPUMem()
-        if step % WireSteps == 0:
-            # WireStatus=calculate_wire_offset(electron_positions)
+        if step % WireSteps == 0:            #  XXXX probably best to do all of these at once each step 
+            # WireStatus=calculate_wire_offset(electron_positions)                    # should do this for bound electrons
             # future = client.submit(visualize_wire, "Offset",  WireStatus, step, t)
-            if (output_type == "density"):
+            if (output_type == "density"):                                             # guess all electrons
                 WireStatus=calcualte_wire_density(electron_positions)
                 future = client.submit(visualize_wire, "Density", WireStatus, step, t)
-            if (output_type == "drift"):
+            if (output_type == "drift"):                                                    # for free electrons or all?
                 WireStatus=calculate_drift_velocities(electron_positions, electron_velocities)
                 future = client.submit(visualize_wire, "Velocity", WireStatus, step, t)
+            if (output_type == "current"):                                                    # for free electrons or all?
+                WireStatus=calculate_current()
+                future = client.submit(visualize_wire, "Amps", WireStatus, step, t)
             futures.append(future)
         if step % DisplaySteps == 0:
             print("Display", step)
