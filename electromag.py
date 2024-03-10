@@ -574,7 +574,7 @@ def calculate_drift_velocities(epositions, evelocities):
 
 #  density, drift, and current should be one function that saves all 3 things XXXX
 def calculate_current():
-    global electron_positions, electron_velocities, gridx, initial_spacing
+    global electron_positions, electron_velocities, gridx, gridy, gridz, initial_spacing
     # Get x positions and x velocities directly from the 2D arrays
     x_positions = electron_positions[:, 0]  # x component of positions for each electron
     x_velocities = electron_velocities[:, 0]  # x component of velocity for each electron
@@ -588,7 +588,7 @@ def calculate_current():
 
     # Calculate electron density in each segment
     segment_length = initial_spacing
-    segment_area = segment_length ** 2  # Assuming a square cross-section
+    segment_area = segment_length*gridy * segment_length*gridz  # cross-section
     electron_density = electron_counts / segment_area
 
     # Calculate current in each segment
