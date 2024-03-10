@@ -126,6 +126,7 @@ output_type = sim_settings.get('output_type', "density") # Can plot density or d
 filename_load = sim_settings.get('filename_load', "none") # Can save or load electron positions and velocities - need right num_electrons
 filename_save = sim_settings.get('filename_save', "simulation.data") # Can save or load electron positions and velocities - need right num_electrons
 pulse_density = sim_settings.get('pulse_density', 2.0) # Can save or load electron positions and velocities - need right num_electrons
+max_velocity = sim_settings.get('max_velocity', 0.95*speed_of_light) # Speed limit for electrons 
 
 
 DisplaySteps = 5000  # every so many simulation steps we call the visualize code
@@ -968,13 +969,20 @@ def print_forces_sum():
 
 
 def update_pv(dt):
-    global electron_velocities, electron_positions, bounds, forces, effective_electron_mass, electron_past_positions
+    global electron_velocities, electron_positions, bounds, forces, effective_electron_mass, electron_past_positions, max_velocity
 
     # Calculate acceleration based on F=ma
     acceleration = forces / effective_electron_mass
 
     # Update velocities
     electron_velocities += acceleration * dt
+
+
+    # Limit velocities to max_velocity
+    velocity_magnitudes = cp.linalg.norm(electron_velocities, axis=1)
+    exceeds_max_velocity = velocity_magnitudes > max_velocity
+    # Only apply correction to electrons exceeding max_velocity
+    electron_velocities[exceeds_max_velocity] = (electron_velocities[exceeds_max_velocity].T * (max_velocity / velocity_magnitudes[exceeds_max_velocity])).T
 
     # Update positions using vectors
     electron_positions += electron_velocities * dt

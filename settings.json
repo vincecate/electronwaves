@@ -160,15 +160,29 @@
     "num_steps": 2000
   },
   "19": {
-    "gridx": 100,
-    "gridy": 30,
-    "gridz": 30,
-    "speedup": 50,
+    "gridx": 300,
+    "gridy": 20,
+    "gridz": 20,
+    "speedup": 10,
     "pulse_width": 30,
     "initialize_velocities": false,
     "search_type": 2,
     "filename_save": "simulation.19.data",
-    "pulse_density":1.05,
+    "pulse_density":1.01,
+    "output_type":"current",
+    "num_steps": 2000
+  },
+  "20": {
+    "gridx": 300,
+    "gridy": 20,
+    "gridz": 20,
+    "speedup": 10,
+    "pulse_width": 30,
+    "initialize_velocities": false,
+    "search_type": 2,
+    "filename_load": "simulation.19.data.npz",
+    "filename_save": "simulation.20.data",
+    "pulse_density":1.01,
     "output_type":"current",
     "num_steps": 2000
   }
