@@ -185,6 +185,62 @@
     "pulse_density":1.01,
     "output_type":"current",
     "num_steps": 2000
+  },
+  "21": {
+    "gridx": 300,
+    "gridy": 20,
+    "gridz": 20,
+    "speedup": 10,
+    "pulse_width": 30,
+    "initialize_velocities": false,
+    "search_type": 0,
+    "filename_load": "simulation.19.data.npz",
+    "filename_save": "simulation.21.data",
+    "pulse_density":1.01,
+    "output_type":"current",
+    "num_steps": 2000
+  },
+  "22": {
+    "gridx": 300,
+    "gridy": 20,
+    "gridz": 20,
+    "speedup": 5,
+    "pulse_width": 30,
+    "initialize_velocities": true,
+    "search_type": 2,
+    "filename_save": "simulation.22.data",
+    "pulse_density":1.00,
+    "output_type":"current",
+    "num_steps": 2000
+  },
+  "23": {
+    "gridx": 300,
+    "gridy": 20,
+    "gridz": 20,
+    "speedup": 5,
+    "pulse_width": 30,
+    "initialize_velocities": true,
+    "search_type": 2,
+    "filename_load": "simulation.22.data.npz",
+    "filename_save": "simulation.23.data",
+    "pulse_density":1.00,
+    "output_type":"current",
+    "num_steps": 2000
+  },
+  "24": {
+    "gridx": 300,
+    "gridy": 20,
+    "gridz": 20,
+    "speedup": 10,
+    "pulse_width": 30,
+    "initialize_velocities": true,
+    "boltz_temp": 150.0,
+    "wire_steps":  10,
+    "search_type": 2,
+    "filename_save": "simulation.24.data",
+    "pulse_density":1.00,
+    "output_type":"current",
+    "num_steps": 8000
   }
 }
 

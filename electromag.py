@@ -119,7 +119,7 @@ pulse_width = sim_settings.get('pulse_width', 40 )
 num_steps = sim_settings.get('num_steps', 2000 )
 forcecalc = sim_settings.get('forcecalc', 1 )               # 1 for CUDA, 2 chunked, 3 nearby, 4 call 
 reverse_factor = sim_settings.get('reverse_factor', -0.95)  # when hits side of the wire is reflected - -1=100% and -0.95=95% velocity after reflected
-search_type= sim_settings.get('search_type', 1)  # 1 is binary search 2 is "twoshot"
+search_type= sim_settings.get('search_type', 2)  #  0 is no history, 1 is binary search of history, 2 is "twoshot" in history
 initialize_velocities= sim_settings.get('initialize_velocities', False) # can have electrons initialized to moving if True and not moving if False
 use_lorentz= sim_settings.get('use_lorentz', True) # use Lorentz transformation on coulombic force if true 
 output_type = sim_settings.get('output_type', "density") # Can plot density or drift
@@ -127,10 +127,12 @@ filename_load = sim_settings.get('filename_load', "none") # Can save or load ele
 filename_save = sim_settings.get('filename_save', "simulation.data") # Can save or load electron positions and velocities - need right num_electrons
 pulse_density = sim_settings.get('pulse_density', 2.0) # Can save or load electron positions and velocities - need right num_electrons
 max_velocity = sim_settings.get('max_velocity', 0.95*speed_of_light) # Speed limit for electrons 
+boltz_temp = sim_settings.get('boltz_temp', 300.0)     # Boltzman temperature for random velocities 
+wire_steps = sim_settings.get('wire_steps', 1)         # How many steps between wire plot outputs 
 
 
 DisplaySteps = 5000  # every so many simulation steps we call the visualize code
-WireSteps = 1        # every so many simulation steps we call the visualize code
+wire_steps = 1        # every so many simulation steps we call the visualize code
 
 
 # Initial electron speed 2,178,278 m/s
@@ -308,7 +310,8 @@ def resolve_collisions(electron_positions, electron_velocities, bounce_distance)
                 electron_velocities[i], electron_velocities[j] = electron_velocities[j], electron_velocities[i]
 
 
-def generate_thermal_velocities(num_electrons, temperature=300):
+def generate_thermal_velocities():
+    global num_electrons, boltz_temp
     """
     Generates random thermal velocity vectors for a given number of electrons
     at a specified temperature. The Maxwell-Boltzmann distribution is used to
@@ -327,7 +330,7 @@ def generate_thermal_velocities(num_electrons, temperature=300):
     electron_mass = 9.1093837e-31  # Electron mass, in kg
 
     # Calculate the standard deviation of the speed distribution
-    sigma = cp.sqrt(kb * temperature / electron_mass)
+    sigma = cp.sqrt(kb * boltz_temp / electron_mass)
 
     # Generate random speeds from a Maxwell-Boltzmann distribution
     # Use the fact that the Maxwell-Boltzmann distribution for speeds in one dimension
@@ -823,10 +826,21 @@ extern "C" __global__ void calculate_forces(const double3* electron_positions, c
         for (int j = 0; j < num_electrons; j++) {
             if (i != j) {
                 int best_delay_index;
-                if (search_type == 1){
-                    best_delay_index = find_best_delay_position_binary(current_position, &electron_past_positions[j * past_positions_count], past_positions_count, dt);
-                } else {
-                    best_delay_index = find_best_delay_position_2shot(current_position, &electron_past_positions[j * past_positions_count], past_positions_count, dt);
+                switch (search_type) {
+                    case 0:
+                        best_delay_index =0;
+                        break;
+                    case 1:
+                        best_delay_index = find_best_delay_position_binary(current_position, &electron_past_positions[j * past_positions_count], past_positions_count, dt);
+                        break;
+                    case 2:
+                        best_delay_index = find_best_delay_position_2shot(current_position, &electron_past_positions[j * past_positions_count], past_positions_count, dt);
+                        break;
+                    default:
+                        printf("ERROR search_type is not valid %d\\n", search_type);
+                        best_delay_index =0;
+                        break;
+
                 }
                 if (threadIdx.x == 0 && blockIdx.x == 0 && j == 8)     
                     printf("best_delay_index %d\\n", best_delay_index);   // one sample to see it changes
@@ -1048,7 +1062,7 @@ def main():
         t = step * dt
         print("In main", step)
         GPUMem()
-        if step % WireSteps == 0:            #  XXXX probably best to do all of these at once each step 
+        if step % wire_steps == 0:            #  XXXX probably best to do all of these at once each step 
             # WireStatus=calculate_wire_offset(electron_positions)                    # should do this for bound electrons
             # future = client.submit(visualize_wire, "Offset",  WireStatus, step, t)
             if (output_type == "density"):                                             # guess all electrons
