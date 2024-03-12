@@ -237,10 +237,10 @@
     "num_steps": 2000
   },
   "24": {
-    "gridx": 300,
+    "gridx": 500,
     "gridy": 20,
     "gridz": 20,
-    "speedup": 1,
+    "speedup": 5,
     "pulse_width": 30,
     "pulse_offset": 100,
     "initialize_velocities": true,

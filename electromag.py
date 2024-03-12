@@ -351,9 +351,9 @@ def initialize_electrons_sine_wave():
 
     # Generate positions for electrons with more density towards the ends
     # This uses a sine wave function to skew the distribution towards 0 and gridx
-    n=2.0
+    n=1.0
     theta = cp.linspace(0, cp.pi, num_electrons)
-    x_positions_skewed = gridx * ((1 - cp.cos(theta))**n / (2**n)) * initial_spacing
+    x_positions_skewed = (gridx-1) * ((1 - cp.cos(theta))**n / (2**n)) * initial_spacing
     y_positions = cp.random.uniform(0, gridy * initial_spacing, num_electrons)
     z_positions = cp.random.uniform(0, gridz * initial_spacing, num_electrons)
 
@@ -589,13 +589,14 @@ def calculate_plots():
     # Calculate average velocities
     average_velocities = velocity_sums / electron_counts
 
+    # The volume of one slice of the wire cut in one unit in x direction
+    wire_slice_volume = initial_spacing * (gridy*initial_spacing) * (gridz*initial_spacing)  
+
     # Calculate electron density in each segment
-    segment_length = initial_spacing
-    segment_area = segment_length*gridy * segment_length*gridz  # cross-section
-    electron_density = electron_counts / segment_area
+    electron_density = electron_counts / wire_slice_volume
 
     # Calculate current in each segment
-    amps = electron_density * velocity_sums * electron_charge
+    amps = electron_density * average_velocities * electron_charge
 
     return electron_counts.get(), average_velocities.get(), amps.get()  # Return in NumPy, not CuPy
 
