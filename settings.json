@@ -248,6 +248,7 @@
     "use_lorentz": false,
     "filename_save": "simulation.24.data",
     "pulse_density":1.00,
+    "past_positions_count":300,
     "num_steps": 6000
   }
 }

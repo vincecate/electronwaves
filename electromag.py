@@ -126,13 +126,10 @@ filename_load = sim_settings.get('filename_load', "none") # Can save or load ele
 filename_save = sim_settings.get('filename_save', "simulation.data") # Can save or load electron positions and velocities - need right num_electrons
 pulse_density = sim_settings.get('pulse_density', 2.0) # Can save or load electron positions and velocities - need right num_electrons
 max_velocity = sim_settings.get('max_velocity', 0.95*speed_of_light) # Speed limit for electrons 
-boltz_temp = sim_settings.get('boltz_temp', 300.0)     # Boltzman temperature for random velocities 
-wire_steps = sim_settings.get('wire_steps', 1)         # How many steps between wire plot outputs 
-
-
-DisplaySteps = 5000  # every so many simulation steps we call the visualize code
-wire_steps = 1        # every so many simulation steps we call the visualize code
-
+boltz_temp = sim_settings.get('boltz_temp', 300.0)        # Boltzman temperature for random velocities 
+wire_steps = sim_settings.get('wire_steps', 1)            # How many steps between wire plot outputs 
+display_steps = sim_settings.get('display_steps', 8000)   # every so many simulation steps we call the visualize code
+past_positions_count = sim_settings.get('past_positions_count', 100)   # how many past positions history we keep for each electron
 
 # Initial electron speed 2,178,278 m/s
 # electron_speed= 2178278  
@@ -190,7 +187,6 @@ forces = cp.zeros((num_electrons, 3))
 electron_is_bound = cp.zeros(num_electrons, dtype=bool)   # if True then electron is bound to an atom, if flase then free
 electron_atom_center = cp.zeros((num_electrons, 3))       # atom position that spring for bound electron is attached to
 
-past_positions_count = 100
 electron_past_positions = cp.zeros((num_electrons, past_positions_count, 3))   # keeping past positions with current at 0, previos 1, etc
 electron_past_velocities = cp.zeros((num_electrons, past_positions_count, 3))   # keeping past positions with current at 0, previos 1, etc
 
@@ -1026,7 +1022,7 @@ def main():
             futures.append(future)
             future = client.submit(visualize_wire, "Amps", amps_plot, step, t)
             futures.append(future)
-        if step % DisplaySteps == 0:
+        if step % display_steps == 0:
             print("Display", step)
             copypositions=electron_positions.get() # get makes Numpy copy so runs on CPU in Dask
             copyvelocities=electron_velocities.get() # get makes Numpy copy so runs on CPU in Dask
