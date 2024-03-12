@@ -130,6 +130,7 @@ boltz_temp = sim_settings.get('boltz_temp', 300.0)        # Boltzman temperature
 wire_steps = sim_settings.get('wire_steps', 1)            # How many steps between wire plot outputs 
 display_steps = sim_settings.get('display_steps', 8000)   # every so many simulation steps we call the visualize code
 past_positions_count = sim_settings.get('past_positions_count', 100)   # how many past positions history we keep for each electron
+initialize_wave = sim_settings.get('initialize_wave', True)   # Try to initialize in a wave pattern so not in rush to move 
 
 # Initial electron speed 2,178,278 m/s
 # electron_speed= 2178278  
@@ -340,6 +341,39 @@ def generate_thermal_velocities():
     return velocities
 
 
+def initialize_electrons_sine_wave():
+    global initial_radius, electron_velocities, electron_positions, num_electrons, electron_past_positions
+    global initial_spacing, initialize_velocities, electron_speed, pulse_width, electron_thermal_speed, gridx, gridy, gridz, past_positions_count
+
+    # Adjusted for demonstration, replace with the actual values or calculations
+    gridx = 1.0  # Size of the grid in the x direction
+    gridy = 1.0  # Size of the grid in the y direction
+    gridz = 1.0  # Size of the grid in the z direction
+    num_electrons = 1000  # Total number of electrons
+    initial_spacing = 0.01  # Spacing coefficient
+
+    # Generate positions for electrons with more density towards the ends
+    # This uses a sine wave function to skew the distribution towards 0 and gridx
+    theta = cp.linspace(0, cp.pi, num_electrons)
+    x_positions_skewed = gridx * (1 - cp.cos(theta)) / 2 * initial_spacing
+    y_positions = cp.random.uniform(0, gridy * initial_spacing, num_electrons)
+    z_positions = cp.random.uniform(0, gridz * initial_spacing, num_electrons)
+
+    # Stack x, y, z positions to form the electron_positions array
+    electron_positions = cp.stack((x_positions_skewed, y_positions, z_positions), axis=-1)
+
+    # Initialize velocities if needed
+    if initialize_velocities:
+        electron_velocities = generate_thermal_velocities()
+    else:
+        electron_velocities = cp.zeros((num_electrons, 3))
+
+    # Initialize past positions array
+    electron_past_positions = cp.tile(electron_positions[:, None, :], (1, past_positions_count, 1))
+
+    # Additional steps to set up velocities and past positions as needed...
+
+
 # When done with initialize_electrons these two arrays should have this shape
 # electron_positions = cp.zeros((num_electrons, 3))
 # electron_velocities = cp.zeros((num_electrons, 3))
@@ -364,7 +398,7 @@ def initialize_electrons():
     z_positions = cp.random.uniform(0, gridz * initial_spacing, num_electrons)
 
     # Shuffle the x_positions to mix pulse and rest electrons, maintaining overall distribution
-    cp.random.shuffle(x_positions)
+    # cp.random.shuffle(x_positions)    # XXX seems to defeat the idea of the pulse
 
     # Stack x, y, z positions to form the electron_positions array
     electron_positions = cp.stack((x_positions[:num_electrons], y_positions, z_positions), axis=-1)
@@ -984,7 +1018,7 @@ def update_pv(dt):
 
 
 def main():
-    global gridx, gridy, gridz, initial_spacing, num_steps, speedup, forces, electron_positions, electron_velocities, dt
+    global gridx, gridy, gridz, initial_spacing, num_steps, speedup, forces, electron_positions, electron_velocities, dt, initialize_wave
 
     print("In main")
     if (pulse_width > gridx/2):
@@ -993,6 +1027,12 @@ def main():
 
     checkgpu()
     GPUMem()
+    if (initialize_wave):
+        initialize_electrons_sine_wave()
+    else:
+        initialize_electrons()
+
+
     initialize_electrons()
     os.makedirs('simulation', exist_ok=True) # Ensure the simulation directory exists
 
