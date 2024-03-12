@@ -17,6 +17,9 @@ fi
 rm cropped/*
 date
 
+mkdir -p velocity
+mkdir -p density
+mkdir -p amps
 ./electromag.py $1
 
 

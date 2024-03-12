@@ -17,8 +17,5 @@ fi
 for i in 16; do
   echo "Iteration with i=$i"
   date
-  ./go $i
-  rm cropped/*
-  ./makemovie.wire.nc.py
-  ./go.save $i
+  ./go.result $i
 done

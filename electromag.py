@@ -122,7 +122,6 @@ reverse_factor = sim_settings.get('reverse_factor', -0.95)  # when hits side of 
 search_type= sim_settings.get('search_type', 2)  #  0 is no history, 1 is binary search of history, 2 is "twoshot" in history
 initialize_velocities= sim_settings.get('initialize_velocities', False) # can have electrons initialized to moving if True and not moving if False
 use_lorentz= sim_settings.get('use_lorentz', True) # use Lorentz transformation on coulombic force if true 
-output_type = sim_settings.get('output_type', "density") # Can plot density or drift
 filename_load = sim_settings.get('filename_load', "none") # Can save or load electron positions and velocities - need right num_electrons
 filename_save = sim_settings.get('filename_save', "simulation.data") # Can save or load electron positions and velocities - need right num_electrons
 pulse_density = sim_settings.get('pulse_density', 2.0) # Can save or load electron positions and velocities - need right num_electrons
@@ -376,7 +375,7 @@ def initialize_electrons():
 
     # Initialize velocities
     if initialize_velocities:
-        electron_velocities = generate_thermal_velocities(num_electrons, electron_thermal_speed)
+        electron_velocities = generate_thermal_velocities()
     else:
         electron_velocities = cp.zeros((num_electrons, 3))
 
@@ -528,57 +527,11 @@ def calculate_wire_offset(epositions):
 
 
 
-#  Use CuPy to make a histogram to get density of how many electrons are currently in each slice of the wire
-def calcualte_wire_density(epositions):
-    global initial_spacing, gridx
-
-    # Get x positions directly from the 2D array (all rows, 0th column for x)
-    x_positions = epositions[:, 0]
-
-    # Convert positions to segment indices
-    segment_indices = cp.floor(x_positions / initial_spacing).astype(cp.int32)
-
-    # Calculate histogram
-    histogram, _ = cp.histogram(segment_indices, bins=cp.arange(-0.5, gridx + 0.5, 1))
-
-    return histogram.get()    # return in Numby not cupy
 
 
-
-#  Use CuPy to get average drift velocity of electrons in each slice of the simulated wire
-#  Return as a NumPy array so CPU/Dask output routine can use it
-def calculate_drift_velocities(epositions, evelocities):
-    global initial_spacing, gridx
-    
-    # Get x positions and x velocities directly from the 2D arrays
-    x_positions = epositions[:, 0]       # x component of positions for each electron
-    x_velocities = evelocities[:, 0]     # x component of velocity for each electron
-
-    # Convert positions to segment indices
-    segment_indices = cp.floor(x_positions / initial_spacing).astype(cp.int32)
-
-    # Initialize an array to store the sum of velocities in each segment
-    velocity_sums = cp.zeros(gridx, dtype=cp.float32)
-    
-    # Initialize an array to count the number of electrons in each segment
-    electron_counts = cp.zeros(gridx, dtype=cp.int32)
-    
-    # Use bincount to sum velocities and count electrons in each segment
-    velocity_sums = cp.bincount(segment_indices, weights=x_velocities, minlength=gridx)
-    electron_counts = cp.bincount(segment_indices, minlength=gridx)
-    
-    # To avoid division by zero, replace zeros in electron_counts with ones (or use np.where to handle zeros)
-    electron_counts = cp.where(electron_counts == 0, 1, electron_counts)
-    
-    # Calculate average velocities
-    average_velocities = velocity_sums / electron_counts
-
-    return average_velocities.get()  # Return in NumPy not CuPy
-
-
-#  density, drift, and current should be one function that saves all 3 things XXXX
-def calculate_current():
-    global electron_positions, electron_velocities, gridx, gridy, gridz, initial_spacing
+#  returns  (density, velocity, amps)    - for plotting to files
+def calculate_plots():
+    global electron_positions, electron_velocities, gridx, gridy, gridz, initial_spacing, electron_charge
     # Get x positions and x velocities directly from the 2D arrays
     x_positions = electron_positions[:, 0]  # x component of positions for each electron
     x_velocities = electron_velocities[:, 0]  # x component of velocity for each electron
@@ -589,6 +542,11 @@ def calculate_current():
     # Use bincount to sum velocities and count electrons in each segment
     velocity_sums = cp.bincount(segment_indices, weights=x_velocities, minlength=gridx)
     electron_counts = cp.bincount(segment_indices, minlength=gridx)
+    # To avoid division by zero, replace zeros in electron_counts with ones (or use np.where to handle zeros)
+    electron_counts = cp.where(electron_counts == 0, 1, electron_counts)
+
+    # Calculate average velocities
+    average_velocities = velocity_sums / electron_counts
 
     # Calculate electron density in each segment
     segment_length = initial_spacing
@@ -596,15 +554,14 @@ def calculate_current():
     electron_density = electron_counts / segment_area
 
     # Calculate current in each segment
-    charge_per_electron = 1.602e-19  # Charge of an electron in coulombs
-    current = electron_density * velocity_sums * charge_per_electron
+    amps = electron_density * velocity_sums * electron_charge
 
-    return current.get()  # Return in NumPy, not CuPy
+    return electron_counts.get(), average_velocities.get(), amps.get()  # Return in NumPy, not CuPy
 
 
 
 # Given an array with values we plot it
-#  Can be used for density or average velocity along the wire
+#  Can be used for offset, density, velocity, current  along the wire
 def visualize_wire(ylabel, yvalues, step, t):
     # Plotting
     fig, ax = plt.subplots(figsize=(12.8, 9.6))
@@ -620,7 +577,8 @@ def visualize_wire(ylabel, yvalues, step, t):
     ax.grid(True)
 
     # Save the figure
-    filename = os.path.join('simulation', f'wire_{step}.png')
+    directory=ylabel.lower()
+    filename = os.path.join(directory, f'wire_{step}.png')
     plt.savefig(filename)
     plt.close(fig)  # Close the figure to free memory
 
@@ -871,52 +829,48 @@ extern "C" __global__ void calculate_forces(const double3* electron_positions, c
                 relative_velocity_magnitude = min(relative_velocity_magnitude, 0.99*speed_of_light);
 
                 double coulomb;
-                if (use_lorentz) {
-                    // Calculate the Lorentz factor (gamma)
-                    double gamma = 1.0 / sqrt(1.0 - (relative_velocity_magnitude * relative_velocity_magnitude) / (speed_of_light * speed_of_light));
-                    if (threadIdx.x == 0 && blockIdx.x == 0 && j == 8)     
-                        printf("gamma  =%.15lf\\n", gamma);
-                    coulomb = gamma * coulombs_constant * electron_charge * electron_charge / dist_sq;
-                } else {
-                    double dot_product = relative_velocity.x * normalized_r.x +
-                                         relative_velocity.y * normalized_r.y +
-                                         relative_velocity.z * normalized_r.z;
+                double dot_product = relative_velocity.x * normalized_r.x +
+                                     relative_velocity.y * normalized_r.y +
+                                     relative_velocity.z * normalized_r.z;
 
-                    // Ensure dot_product is scaled properly relative to the magnitudes and speed of light
-                    // Adjustment_factor should be greater than 1 if coming together and less than 1 if moving away 
-                    double adjustment_factor = 1.0; // Default to no adjustment
+                // Ensure dot_product is scaled properly relative to the magnitudes and speed of light
+                // Adjustment_factor should be greater than 1 if coming together and less than 1 if moving away 
+                double adjustment_factor = 1.0; // Default to no adjustment
                 
-                    // Compute the magnitude of the relative velocity scaled by the speed of light
-                    double speed_ratio = relative_velocity_magnitude / speed_of_light;
-                    if (threadIdx.x == 0 && blockIdx.x == 0 && j == 8)     
-                        printf("speed_ratio =%.15lf\\n", speed_ratio);
+                // Compute the magnitude of the relative velocity scaled by the speed of light
+                double speed_ratio = relative_velocity_magnitude / speed_of_light;
+                if (threadIdx.x == 0 && blockIdx.x == 0 && j == 8)     
+                    printf("speed_ratio =%.15lf\\n", speed_ratio);
 
-                    double speed_ratio_bounded = fmin(0.5, fabs(speed_ratio));  // so positive and bounded between 0 and 0.5
+                double speed_ratio_bounded = fmin(0.5, fabs(speed_ratio));  // so positive and bounded between 0 and 0.5
 
-                    // Use the dot product to determine if the electrons are moving towards or away from each other
-                    bool movingTowardsEachOther = dot_product < 0;
+                // Use the dot product to determine if the electrons are moving towards or away from each other
+                bool movingTowardsEachOther = dot_product < 0;
 
-                    // Adjust the adjustment_factor based on the direction of movement
-                    // Increase when moving towards each other, decrease when moving away
-                    if (movingTowardsEachOther) {
+                // Adjust the adjustment_factor based on the direction of movement
+                // Increase when moving towards each other, decrease when moving away
+                if (movingTowardsEachOther) {
+                    if (use_lorentz) {                   // Calculate the Lorentz factor (gamma)
+                        adjustment_factor = 1.0 / sqrt(1.0 - (relative_velocity_magnitude * relative_velocity_magnitude) / (speed_of_light * speed_of_light));
+                    } else{
                         adjustment_factor = 1.0 + speed_ratio_bounded; // increases the force if moving towards each other
-                    } else {
-                        adjustment_factor = 1.0 - speed_ratio_bounded; // Reduce the force if moving away from each other
                     }
-
-
-                    // adjustment_factor should now be between 0.5 and 1.5 
-                    if (threadIdx.x == 0 && blockIdx.x == 0 && j == 8)     
-                        printf("adjustment_factor=%.15lf\\n", adjustment_factor);
-
-                    coulomb = adjustment_factor * coulombs_constant * electron_charge * electron_charge / dist_sq; // dist_sq is non zero
+                } else {
+                    adjustment_factor = 1.0 - speed_ratio_bounded; // Reduce the force if moving away from each other
                 }
+
+
+                // adjustment_factor should now be between 0.5 or greater  
+                if (threadIdx.x == 0 && blockIdx.x == 0 && j == 8)     
+                    printf("adjustment_factor=%.15lf\\n", adjustment_factor);
+
+                coulomb = adjustment_factor * coulombs_constant * electron_charge * electron_charge / dist_sq; // dist_sq is non zero
 
                 force.x += coulomb * normalized_r.x;
                 force.y += coulomb * normalized_r.y;
                 force.z += coulomb * normalized_r.z;
-            }
-        }
+            } // if less than num_electrons
+        }    // for loop
         // Debug: Print the calculated force for the last few electrons
         if(i > num_electrons-10) {
             printf("Electron %d Force: x=%e, y=%e, z=%e\\n", i, force.x, force.y, force.z);
@@ -1065,15 +1019,12 @@ def main():
         if step % wire_steps == 0:            #  XXXX probably best to do all of these at once each step 
             # WireStatus=calculate_wire_offset(electron_positions)                    # should do this for bound electrons
             # future = client.submit(visualize_wire, "Offset",  WireStatus, step, t)
-            if (output_type == "density"):                                             # guess all electrons
-                WireStatus=calcualte_wire_density(electron_positions)
-                future = client.submit(visualize_wire, "Density", WireStatus, step, t)
-            if (output_type == "drift"):                                                    # for free electrons or all?
-                WireStatus=calculate_drift_velocities(electron_positions, electron_velocities)
-                future = client.submit(visualize_wire, "Velocity", WireStatus, step, t)
-            if (output_type == "current"):                                                    # for free electrons or all?
-                WireStatus=calculate_current()
-                future = client.submit(visualize_wire, "Amps", WireStatus, step, t)
+            density_plot, velocity_plot, amps_plot = calculate_plots()
+            future = client.submit(visualize_wire, "Density", density_plot, step, t)
+            futures.append(future)
+            future = client.submit(visualize_wire, "Velocity", velocity_plot, step, t)
+            futures.append(future)
+            future = client.submit(visualize_wire, "Amps", amps_plot, step, t)
             futures.append(future)
         if step % DisplaySteps == 0:
             print("Display", step)
