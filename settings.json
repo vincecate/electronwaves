@@ -5,6 +5,7 @@
     "gridz": 10,
     "speedup": 30,
     "pulse_width": 20,
+    "initialize_velocities": false,
     "num_steps": 100
   },
   "1": {
@@ -243,13 +244,15 @@
     "pulse_width": 30,
     "initialize_velocities": true,
     "boltz_temp": 150.0,
-    "wire_steps":  10,
+    "wire_steps":  1,
     "search_type": 2,
     "use_lorentz": false,
     "filename_save": "simulation.24.data",
     "pulse_density":1.00,
+    "pulse_velocity": 2e8,
+    "initialize_wave":true,
     "past_positions_count":300,
-    "num_steps": 6000
+    "num_steps": 1000
   }
 }
 

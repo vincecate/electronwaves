@@ -131,6 +131,8 @@ wire_steps = sim_settings.get('wire_steps', 1)            # How many steps betwe
 display_steps = sim_settings.get('display_steps', 8000)   # every so many simulation steps we call the visualize code
 past_positions_count = sim_settings.get('past_positions_count', 100)   # how many past positions history we keep for each electron
 initialize_wave = sim_settings.get('initialize_wave', True)   # Try to initialize in a wave pattern so not in rush to move 
+pulse_velocity = sim_settings.get('pulse_velocity', 0.7*speed_of_light)   # Have electrons in pulse area moving
+pulse_offset = sim_settings.get('pulse_offset', 20)   # X value offset for pulse 
 
 # Initial electron speed 2,178,278 m/s
 # electron_speed= 2178278  
@@ -148,7 +150,7 @@ pulsehalf=False    # True to only pulse half the plane
 
 
 # bounds format is  ((minx,  maxx) , (miny, maxy), (minz, maxz))
-bounds = ((0, gridx*initial_spacing), (0, gridy*initial_spacing), (0, gridz*initial_spacing))
+bounds = ((0, (gridx-1)*initial_spacing), (0, (gridy-1)*initial_spacing), (0, (gridz-1)*initial_spacing))
 
 # Time stepping
 visualize_start= int(pulse_width/3) # have initial pulse electrons we don't really want to see 
@@ -345,17 +347,13 @@ def initialize_electrons_sine_wave():
     global initial_radius, electron_velocities, electron_positions, num_electrons, electron_past_positions
     global initial_spacing, initialize_velocities, electron_speed, pulse_width, electron_thermal_speed, gridx, gridy, gridz, past_positions_count
 
-    # Adjusted for demonstration, replace with the actual values or calculations
-    gridx = 1.0  # Size of the grid in the x direction
-    gridy = 1.0  # Size of the grid in the y direction
-    gridz = 1.0  # Size of the grid in the z direction
-    num_electrons = 1000  # Total number of electrons
-    initial_spacing = 0.01  # Spacing coefficient
+    print("initialize_electrons_sine_wave")
 
     # Generate positions for electrons with more density towards the ends
     # This uses a sine wave function to skew the distribution towards 0 and gridx
+    n=2.0
     theta = cp.linspace(0, cp.pi, num_electrons)
-    x_positions_skewed = gridx * (1 - cp.cos(theta)) / 2 * initial_spacing
+    x_positions_skewed = gridx * (1 - cp.cos(theta))**n / 2 * initial_spacing
     y_positions = cp.random.uniform(0, gridy * initial_spacing, num_electrons)
     z_positions = cp.random.uniform(0, gridz * initial_spacing, num_electrons)
 
@@ -368,6 +366,20 @@ def initialize_electrons_sine_wave():
     else:
         electron_velocities = cp.zeros((num_electrons, 3))
 
+    pulse_electrons = pulse_width*gridy*gridz       # number of electrons in pulse volume
+    pulse_start = pulse_offset*gridy*gridz
+    pulse_end = pulse_start + pulse_electrons
+    print(f"pulse_electrons {pulse_electrons}")     # 
+    print(f"pulse_start {pulse_start}")     # 
+    print(f"pulse_end {pulse_end}")     # 
+    if (pulse_velocity > 0):
+        for i in range(pulse_start,pulse_end):
+             electron_velocities[i,0]=pulse_velocity  #  First pulse_width electrons set X to pulse_velocity
+        #indices = cp.arange(num_electrons)             # Create an array of indices
+        #mask = indices < pulse_width*gridy*gridz       # Create a boolean mask where condition is true
+        #electron_velocities[mask, 0] = pulse_velocity  # Set x value for those electrons
+
+    
     # Initialize past positions array
     electron_past_positions = cp.tile(electron_positions[:, None, :], (1, past_positions_count, 1))
 
@@ -1033,7 +1045,6 @@ def main():
         initialize_electrons()
 
 
-    initialize_electrons()
     os.makedirs('simulation', exist_ok=True) # Ensure the simulation directory exists
 
 
