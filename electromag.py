@@ -353,12 +353,13 @@ def initialize_electrons_sine_wave():
     # This uses a sine wave function to skew the distribution towards 0 and gridx
     n=2.0
     theta = cp.linspace(0, cp.pi, num_electrons)
-    x_positions_skewed = gridx * (1 - cp.cos(theta))**n / 2 * initial_spacing
+    x_positions_skewed = gridx * ((1 - cp.cos(theta))**n / (2**n)) * initial_spacing
     y_positions = cp.random.uniform(0, gridy * initial_spacing, num_electrons)
     z_positions = cp.random.uniform(0, gridz * initial_spacing, num_electrons)
 
     # Stack x, y, z positions to form the electron_positions array
     electron_positions = cp.stack((x_positions_skewed, y_positions, z_positions), axis=-1)
+
 
     # Initialize velocities if needed
     if initialize_velocities:
@@ -367,17 +368,15 @@ def initialize_electrons_sine_wave():
         electron_velocities = cp.zeros((num_electrons, 3))
 
     pulse_electrons = pulse_width*gridy*gridz       # number of electrons in pulse volume
-    pulse_start = pulse_offset*gridy*gridz
-    pulse_end = pulse_start + pulse_electrons
+    pulse_start = pulse_offset*initial_spacing
+    pulse_end = pulse_start + (pulse_width*initial_spacing)
     print(f"pulse_electrons {pulse_electrons}")     # 
     print(f"pulse_start {pulse_start}")     # 
     print(f"pulse_end {pulse_end}")     # 
     if (pulse_velocity > 0):
-        for i in range(pulse_start,pulse_end):
-             electron_velocities[i,0]=pulse_velocity  #  First pulse_width electrons set X to pulse_velocity
-        #indices = cp.arange(num_electrons)             # Create an array of indices
-        #mask = indices < pulse_width*gridy*gridz       # Create a boolean mask where condition is true
-        #electron_velocities[mask, 0] = pulse_velocity  # Set x value for those electrons
+        xp = electron_positions[:, 0]                   # Extract the x positions of all electrons
+        mask = (xp > pulse_start) & (xp < pulse_end)    # Create a boolean mask for the condition
+        electron_velocities[mask, 0] = pulse_velocity   # Apply the mask to set the x velocities
 
     
     # Initialize past positions array
