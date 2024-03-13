@@ -253,6 +253,7 @@
     "pulse_velocity": 2e8,
     "initialize_wave":true,
     "past_positions_count":300,
+    "estimated_secs_per_step":7,
     "num_steps": 1000
   },
   "25": {
@@ -272,6 +273,7 @@
     "pulse_velocity": 2e8,
     "initialize_wave":true,
     "past_positions_count":3,
+    "estimated_secs_per_step":7,
     "num_steps": 1000
   },
   "26": {
@@ -291,7 +293,28 @@
     "pulse_velocity": 2e7,
     "initialize_wave":true,
     "past_positions_count":300,
+    "estimated_secs_per_step":66,
     "num_steps": 3000
+  },
+  "27": {
+    "gridx": 500,
+    "gridy": 20,
+    "gridz": 20,
+    "speedup": 5,
+    "pulse_width": 10,
+    "pulse_offset": 100,
+    "initialize_velocities": true,
+    "boltz_temp": 300.0,
+    "wire_steps":  1,
+    "search_type": 2,
+    "use_lorentz": false,
+    "filename_save": "simulation.27.data",
+    "pulse_density":1.00,
+    "pulse_velocity": 2e8,
+    "initialize_wave":true,
+    "past_positions_count":300,
+    "estimated_secs_per_step":7,
+    "num_steps": 1000
   }
 }
 

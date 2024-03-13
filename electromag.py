@@ -81,6 +81,8 @@ import os
 import sys
 import math
 import json
+import time
+from datetime import datetime, timedelta
 
 # $1 argument gets saved to simnum so can do batch of several simulations from script
 # Check if at least one argument is provided (excluding the script name)
@@ -1059,6 +1061,7 @@ def main():
     future = client.submit(visualize_atoms, copypositions, copyvelocities, -1, 0.0)
     futures.append(future)
     # main simulation loop
+    start_time = time.time()  # Record the start time of the loop
     for step in range(num_steps):
         t = step * dt
         print("In main", step)
@@ -1105,6 +1108,11 @@ def main():
         #detect_and_resolve_collisions()
 
         cp.cuda.Stream.null.synchronize()         # free memory on the GPU
+        elapsed_time = time.time() - start_time           # Calculate elapsed time
+        average_time_per_step = elapsed_time / (step + 1) # Calculate the average time per step so far
+        estimated_time_left = average_time_per_step * (num_steps - (step + 1)) # Estimate the time left by multiplying the average time per step by the number of steps left
+        estimated_completion_time = datetime.now() + timedelta(seconds=estimated_time_left) # Calculate the estimated completion time
+        print(f"Step {step + 1}/{num_steps}. Estimated completion time: {estimated_completion_time.strftime('%Y-%m-%d %H:%M:%S')}")
 
     copypositions=electron_positions.get()
     copyvelocities=electron_velocities.get()
@@ -1112,6 +1120,11 @@ def main():
     futures.append(future)
     wait(futures)
     save_arrays()
+
+
+
+
+
 
 
 
