@@ -1,0 +1,39 @@
+#!/bin/bash
+
+
+# Check if exactly one argument is provided
+if [ "$#" -ne 1 ]; then
+    echo "Error: This script requires exactly one argument."
+    exit 1
+fi
+
+# Set nextsim to the provided argument
+nextsim=$1
+
+echo "nextsim is set to: $nextsim"
+echo "will now wait for previous go.result to finish"
+
+
+# Get the PID of go.result without getting the grep process itself
+pid=$(ps -auxww | grep '[g]o.result' | awk '{print $2}')
+
+# Check if the PID was found
+if [ -z "$pid" ]; then
+    echo "go.result is not running."
+    exit 1
+else
+    echo "Waiting for go.result with PID $pid to finish."
+    # Loop until the process is no longer running
+    while ps -p $pid > /dev/null; do
+        sleep 1
+    done
+    echo "go.result has finished."
+fi
+
+
+
+./go.result $nextsim
+
+
+
+

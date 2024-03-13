@@ -1,0 +1,6 @@
+#!/bin/bash
+
+echo "we will do the real work in a nohup that outputs to nohup2.out"
+
+nohup ./go.next.nohup $1  > nohup2.out 2>&1 &
+
