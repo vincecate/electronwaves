@@ -186,7 +186,7 @@ GPUMem()
 
 
 # Allocate memory for collision pairs (2 integers per collision)
-collision_pairs = cp.zeros((MAX_COLLISIONS, 2), dtype=cp.int32)
+collision_pairs = cp.zeros((collision_max, 2), dtype=cp.int32)
 
 # Allocate memory for the collision count (a single integer)
 collision_count = cp.zeros(1, dtype=cp.int32)
@@ -271,7 +271,7 @@ def load_arrays():
 # electron_positions = cp.zeros((num_electrons, 3))
 # electron_velocities = cp.zeros((num_electrons, 3))
 def detect_and_resolve_collisions():
-    global  electron_positions, electron_velocities, collision_distance, num_electrons
+    global  electron_positions, electron_velocities, collision_count, collision_pairs, collision_max, num_electrons
 
     # Synchronize device to ensure the kernel has finished executing
     # cp.cuda.runtime.deviceSynchronize()
@@ -853,7 +853,8 @@ extern "C" __global__ void calculate_forces(const double3* electron_positions, c
                                 bool force_velocity_adjust,
                                 int collision_max,
                                 int* collision_count,
-                                int* collision_pairs) {
+                                int* collision_pairs,
+                                double collision_distance) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     const double speed_of_light = 299792458.0; // Speed of light in meters per second
 
@@ -898,9 +899,9 @@ extern "C" __global__ void calculate_forces(const double3* electron_positions, c
                 double dist_sq = r.x * r.x + r.y * r.y + r.z * r.z;
                 if (dist_sq < collision_distance * collision_distance) {
                     int collision_id = atomicAdd(collision_count, 1);
-                    if (collision_id < max_collisions) {
-                        collision_pairs[2 * collision_id] = i;           # record this electron
-                        collision_pairs[2 * collision_id + 1] = j;       # and one we collide with
+                    if (collision_id < collision_max) {
+                        collision_pairs[2 * collision_id] = i;           // record this electron
+                        collision_pairs[2 * collision_id + 1] = j;       // and one we collide with
                     }
                 }
                 dist_sq = max(dist_sq, 1.0e-30); // avoid divide by zero
@@ -994,7 +995,7 @@ blockspergrid = math.ceil(num_electrons/threadsperblock)
 #   forces = cp.zeros((num_electrons, 3))
 #
 def calculate_forces_cuda():
-    global electron_positions, electron_velocities, electron_past_positions, electron_past_velocities, past_positions_count, forces, num_electrons, coulombs_constant, electron_charge, dt, search_type, use_lorentz, force_velocity_adjust, collision_max, collision_count, collision_pairs
+    global electron_positions, electron_velocities, electron_past_positions, electron_past_velocities, past_positions_count, forces, num_electrons, coulombs_constant, electron_charge, dt, search_type, use_lorentz, force_velocity_adjust, collision_max, collision_count, collision_pairs, collision_distance
     # Launch kernel with the corrected arguments passing
     start_gpu = cp.cuda.Event()
     end_gpu = cp.cuda.Event()
@@ -1005,7 +1006,7 @@ def calculate_forces_cuda():
         start_gpu.record()
         calculate_forces(grid=(blockspergrid, 1, 1),
                      block=(threadsperblock, 1, 1),
-                     args=(electron_positions, electron_velocities, electron_past_positions, electron_past_velocities, past_positions_count, forces, num_electrons, coulombs_constant, electron_charge,dt, search_type, use_lorentz, force_velocity_adjust))
+                     args=(electron_positions, electron_velocities, electron_past_positions, electron_past_velocities, past_positions_count, forces, num_electrons, coulombs_constant, electron_charge,dt, search_type, use_lorentz, force_velocity_adjust, collision_max, collision_count, collision_pairs, collision_distance))
         cp.cuda.Device().synchronize()    #  Let this finish before we do anything else
 
         end_gpu.record()
