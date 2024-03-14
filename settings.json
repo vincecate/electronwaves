@@ -320,7 +320,7 @@
     "gridy": 20,
     "gridz": 20,
     "speedup": 5,
-    "initialize_velocities": true,
+    "initialize_velocities": false,
     "boltz_temp": 300.0,
     "wire_steps":  1,
     "search_type": 2,

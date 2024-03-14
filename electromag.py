@@ -136,6 +136,7 @@ initialize_wave = sim_settings.get('initialize_wave', True)   # Try to initializ
 pulse_velocity = sim_settings.get('pulse_velocity', 0)   # Have electrons in pulse area moving
 pulse_offset = sim_settings.get('pulse_offset', 0)   # X value offset for pulse 
 force_velocity_adjust = sim_settings.get('force_velocity_adjust', True)   # X value offset for pulse 
+velocity_cap = sim_settings.get('velocity_cap', 3e7)         # For the cappedvelocity output we ignore faster than this
 
 # Initial electron speed 2,178,278 m/s
 # electron_speed= 2178278  
@@ -356,7 +357,7 @@ def initialize_electrons_sine_wave():
     # This uses a sine wave function to skew the distribution towards 0 and gridx
     n=1.0
     theta = cp.linspace(0, cp.pi, num_electrons)
-    x_positions_skewed = gridx * ((1 - cp.cos(theta))**n / (2**n)) * initial_spacing
+    x_positions_skewed = (gridx-1) * ((1 - cp.cos(theta))**n / (2**n)) * initial_spacing   # XXXX not sure gridx-1 might be better gridx
     y_positions = cp.random.uniform(0, gridy * initial_spacing, num_electrons)
     z_positions = cp.random.uniform(0, gridz * initial_spacing, num_electrons)
 
@@ -573,33 +574,46 @@ def calculate_wire_offset(epositions):
 
 
 
-#  returns  (density, velocity, amps, speed)    - for plotting to files
+#  returns  (density, velocity, amps, speed, cappedvelocity)    - for plotting to files
 def calculate_plots():
-    global electron_positions, electron_velocities, gridx, gridy, gridz, initial_spacing, electron_charge
+    global electron_positions, electron_velocities, gridx, gridy, gridz, initial_spacing, electron_charge, velocity_cap
 
     # Get x positions and velocities from the 2D arrays
     x_positions = electron_positions[:, 0]
+    x_velocities = electron_velocities[:, 0]
 
     # Convert positions to segment indices based on the total length of the wire and number of slices
     segment_indices = cp.floor(x_positions / initial_spacing).astype(cp.int32)
-
-    # Ensure segment indices are within bounds (optional, remove if not needed)
+    # Ensure segment indices are within bounds
     segment_indices = cp.clip(segment_indices, 0, gridx - 1)
 
     # Calculate speeds (magnitude of velocity) for each electron
     speeds = cp.sqrt(cp.sum(electron_velocities**2, axis=1))
 
-    # Use bincount to sum velocities, sum speeds, and count electrons in each segment
-    xvelocity_sums = cp.bincount(segment_indices, weights=electron_velocities[:, 0], minlength=gridx)
+    # Use bincount to sum xvelocities, sum speeds, and count electrons in each segment
+    xvelocity_sums = cp.bincount(segment_indices, weights=x_velocities, minlength=gridx)
     speed_sums = cp.bincount(segment_indices, weights=speeds, minlength=gridx)
     electron_counts = cp.bincount(segment_indices, minlength=gridx)
-
-    # Avoid division by zero for segments with no electrons
-    electron_counts = cp.where(electron_counts == 0, 1, electron_counts)
-
+    # Avoid division by zero
+    electron_counts_nonzero = cp.where(electron_counts == 0, 1, electron_counts)
+    
     # Calculate average velocities and speeds
-    average_xvelocities = xvelocity_sums / electron_counts
-    average_speeds = speed_sums / electron_counts
+    average_xvelocities = xvelocity_sums / electron_counts_nonzero
+    average_speeds = speed_sums / electron_counts_nonzero
+
+    # Create a mask for velocities <= 3e6
+    capped_velocity_mask = x_velocities <= velocity_cap
+    # Apply mask to segment indices and velocities
+    capped_segment_indices = segment_indices[capped_velocity_mask]
+    capped_x_velocities = x_velocities[capped_velocity_mask]
+    
+    # Calculate sums of capped velocities
+    capped_xvelocity_sums = cp.bincount(capped_segment_indices, weights=capped_x_velocities, minlength=gridx)
+    capped_electron_counts = cp.bincount(capped_segment_indices, minlength=gridx)
+    capped_electron_counts_nonzero = cp.where(capped_electron_counts == 0, 1, capped_electron_counts)
+    
+    # Calculate average velocities with cap
+    capped_average_xvelocities = capped_xvelocity_sums / capped_electron_counts_nonzero
 
     # Calculate wire slice volume and electron density
     wire_slice_volume = initial_spacing * (gridy * initial_spacing) * (gridz * initial_spacing)
@@ -608,7 +622,10 @@ def calculate_plots():
     # Calculate current in each segment
     amps = electron_density * average_xvelocities * electron_charge
 
-    return electron_counts.get(), average_xvelocities.get(), amps.get(), average_speeds.get()
+    return electron_counts.get(), average_xvelocities.get(), amps.get(), average_speeds.get(), capped_average_xvelocities.get()
+
+
+
 
 
 
@@ -1063,6 +1080,7 @@ def main():
     os.makedirs('density', exist_ok=True) # Ensure the simulation directory exists
     os.makedirs('amps', exist_ok=True) # Ensure the simulation directory exists
     os.makedirs('speed', exist_ok=True) # Ensure the simulation directory exists
+    os.makedirs('cappedvelocity', exist_ok=True) # Ensure the simulation directory exists
 
 
 
@@ -1085,7 +1103,7 @@ def main():
         if step % wire_steps == 0:            #  
             # WireStatus=calculate_wire_offset(electron_positions)                    # should do this for bound electrons
             # future = client.submit(visualize_wire, "Offset",  WireStatus, step, t)
-            density_plot, velocity_plot, amps_plot, speed_plot = calculate_plots()
+            density_plot, velocity_plot, amps_plot, speed_plot, cappedvelocity_plot = calculate_plots()
             future = client.submit(visualize_wire, "Density", density_plot, step, t)
             futures.append(future)
             future = client.submit(visualize_wire, "Velocity", velocity_plot, step, t)
@@ -1093,6 +1111,8 @@ def main():
             future = client.submit(visualize_wire, "Amps", amps_plot, step, t)
             futures.append(future)
             future = client.submit(visualize_wire, "Speed", speed_plot, step, t)
+            futures.append(future)
+            future = client.submit(visualize_wire, "CappedVelocity", cappedvelocity_plot, step, t)
             futures.append(future)
         if step % display_steps == 0:
             print("Display", step)
@@ -1131,6 +1151,7 @@ def main():
         estimated_time_left = average_time_per_step * (num_steps - (step + 1)) # Estimate the time left by multiplying the average time per step by the number of steps left
         estimated_completion_time = datetime.now() + timedelta(seconds=estimated_time_left) # Calculate the estimated completion time
         print(f"Step {step + 1}/{num_steps}. Estimated completion time: {estimated_completion_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        sys.stdout.flush()
 
     copypositions=electron_positions.get()
     copyvelocities=electron_velocities.get()
