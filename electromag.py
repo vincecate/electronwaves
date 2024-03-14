@@ -117,24 +117,25 @@ gridx = sim_settings.get('gridx', 100 )
 gridy = sim_settings.get('gridy', 40 )
 gridz = sim_settings.get('gridz', 40 )
 speedup = sim_settings.get('speedup', 50)
-pulse_width = sim_settings.get('pulse_width', 40 )
+pulse_width = sim_settings.get('pulse_width', 0 )
 num_steps = sim_settings.get('num_steps', 2000 )
 forcecalc = sim_settings.get('forcecalc', 1 )               # 1 for CUDA, 2 chunked, 3 nearby, 4 call 
 reverse_factor = sim_settings.get('reverse_factor', -0.95)  # when hits side of the wire is reflected - -1=100% and -0.95=95% velocity after reflected
 search_type= sim_settings.get('search_type', 2)  #  0 is no history, 1 is binary search of history, 2 is "twoshot" in history
 initialize_velocities= sim_settings.get('initialize_velocities', False) # can have electrons initialized to moving if True and not moving if False
-use_lorentz= sim_settings.get('use_lorentz', True) # use Lorentz transformation on coulombic force if true 
+use_lorentz= sim_settings.get('use_lorentz', False) # use Lorentz transformation on coulombic force if true 
 filename_load = sim_settings.get('filename_load', "none") # Can save or load electron positions and velocities - need right num_electrons
 filename_save = sim_settings.get('filename_save', "simulation.data") # Can save or load electron positions and velocities - need right num_electrons
-pulse_density = sim_settings.get('pulse_density', 2.0) # Can save or load electron positions and velocities - need right num_electrons
+pulse_density = sim_settings.get('pulse_density', 1) # Can save or load electron positions and velocities - need right num_electrons
 max_velocity = sim_settings.get('max_velocity', 0.95*speed_of_light) # Speed limit for electrons 
 boltz_temp = sim_settings.get('boltz_temp', 300.0)        # Boltzman temperature for random velocities 
 wire_steps = sim_settings.get('wire_steps', 1)            # How many steps between wire plot outputs 
 display_steps = sim_settings.get('display_steps', 8000)   # every so many simulation steps we call the visualize code
 past_positions_count = sim_settings.get('past_positions_count', 100)   # how many past positions history we keep for each electron
 initialize_wave = sim_settings.get('initialize_wave', True)   # Try to initialize in a wave pattern so not in rush to move 
-pulse_velocity = sim_settings.get('pulse_velocity', 0.7*speed_of_light)   # Have electrons in pulse area moving
-pulse_offset = sim_settings.get('pulse_offset', 20)   # X value offset for pulse 
+pulse_velocity = sim_settings.get('pulse_velocity', 0)   # Have electrons in pulse area moving
+pulse_offset = sim_settings.get('pulse_offset', 0)   # X value offset for pulse 
+force_velocity_adjust = sim_settings.get('force_velocity_adjust', True)   # X value offset for pulse 
 
 # Initial electron speed 2,178,278 m/s
 # electron_speed= 2178278  
@@ -355,7 +356,7 @@ def initialize_electrons_sine_wave():
     # This uses a sine wave function to skew the distribution towards 0 and gridx
     n=1.0
     theta = cp.linspace(0, cp.pi, num_electrons)
-    x_positions_skewed = (gridx-1) * ((1 - cp.cos(theta))**n / (2**n)) * initial_spacing
+    x_positions_skewed = gridx * ((1 - cp.cos(theta))**n / (2**n)) * initial_spacing
     y_positions = cp.random.uniform(0, gridy * initial_spacing, num_electrons)
     z_positions = cp.random.uniform(0, gridz * initial_spacing, num_electrons)
 
@@ -572,35 +573,42 @@ def calculate_wire_offset(epositions):
 
 
 
-#  returns  (density, velocity, amps)    - for plotting to files
+#  returns  (density, velocity, amps, speed)    - for plotting to files
 def calculate_plots():
     global electron_positions, electron_velocities, gridx, gridy, gridz, initial_spacing, electron_charge
-    # Get x positions and x velocities directly from the 2D arrays
-    x_positions = electron_positions[:, 0]  # x component of positions for each electron
-    x_velocities = electron_velocities[:, 0]  # x component of velocity for each electron
 
-    # Convert positions to segment indices
+    # Get x positions and velocities from the 2D arrays
+    x_positions = electron_positions[:, 0]
+
+    # Convert positions to segment indices based on the total length of the wire and number of slices
     segment_indices = cp.floor(x_positions / initial_spacing).astype(cp.int32)
 
-    # Use bincount to sum velocities and count electrons in each segment
-    velocity_sums = cp.bincount(segment_indices, weights=x_velocities, minlength=gridx)
+    # Ensure segment indices are within bounds (optional, remove if not needed)
+    segment_indices = cp.clip(segment_indices, 0, gridx - 1)
+
+    # Calculate speeds (magnitude of velocity) for each electron
+    speeds = cp.sqrt(cp.sum(electron_velocities**2, axis=1))
+
+    # Use bincount to sum velocities, sum speeds, and count electrons in each segment
+    xvelocity_sums = cp.bincount(segment_indices, weights=electron_velocities[:, 0], minlength=gridx)
+    speed_sums = cp.bincount(segment_indices, weights=speeds, minlength=gridx)
     electron_counts = cp.bincount(segment_indices, minlength=gridx)
-    # To avoid division by zero, replace zeros in electron_counts with ones (or use np.where to handle zeros)
+
+    # Avoid division by zero for segments with no electrons
     electron_counts = cp.where(electron_counts == 0, 1, electron_counts)
 
-    # Calculate average velocities
-    average_velocities = velocity_sums / electron_counts
+    # Calculate average velocities and speeds
+    average_xvelocities = xvelocity_sums / electron_counts
+    average_speeds = speed_sums / electron_counts
 
-    # The volume of one slice of the wire cut in one unit in x direction
-    wire_slice_volume = initial_spacing * (gridy*initial_spacing) * (gridz*initial_spacing)  
-
-    # Calculate electron density in each segment
+    # Calculate wire slice volume and electron density
+    wire_slice_volume = initial_spacing * (gridy * initial_spacing) * (gridz * initial_spacing)
     electron_density = electron_counts / wire_slice_volume
 
     # Calculate current in each segment
-    amps = electron_density * average_velocities * electron_charge
+    amps = electron_density * average_xvelocities * electron_charge
 
-    return electron_counts.get(), average_velocities.get(), amps.get()  # Return in NumPy, not CuPy
+    return electron_counts.get(), average_xvelocities.get(), amps.get(), average_speeds.get()
 
 
 
@@ -813,7 +821,8 @@ extern "C" __global__ void calculate_forces(const double3* electron_positions, c
                                 double electron_charge,
                                 double dt,
                                 int search_type,
-                                bool use_lorentz) {
+                                bool use_lorentz,
+                                bool force_velocity_adjust) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     const double speed_of_light = 299792458.0; // Speed of light in meters per second
 
@@ -880,27 +889,29 @@ extern "C" __global__ void calculate_forces(const double3* electron_positions, c
                 // Ensure dot_product is scaled properly relative to the magnitudes and speed of light
                 // Adjustment_factor should be greater than 1 if coming together and less than 1 if moving away 
                 double adjustment_factor = 1.0; // Default to no adjustment
-                
-                // Compute the magnitude of the relative velocity scaled by the speed of light
-                double speed_ratio = relative_velocity_magnitude / speed_of_light;
-                if (threadIdx.x == 0 && blockIdx.x == 0 && j == 8)     
-                    printf("speed_ratio =%.15lf\\n", speed_ratio);
+               
+                if (force_velocity_adjust){
+                    // Compute the magnitude of the relative velocity scaled by the speed of light
+                    double speed_ratio = relative_velocity_magnitude / speed_of_light;
+                    if (threadIdx.x == 0 && blockIdx.x == 0 && j == 8)     
+                        printf("speed_ratio =%.15lf\\n", speed_ratio);
 
-                double speed_ratio_bounded = fmin(0.5, fabs(speed_ratio));  // so positive and bounded between 0 and 0.5
+                    double speed_ratio_bounded = fmin(0.5, fabs(speed_ratio));  // so positive and bounded between 0 and 0.5
 
-                // Use the dot product to determine if the electrons are moving towards or away from each other
-                bool movingTowardsEachOther = dot_product < 0;
+                    // Use the dot product to determine if the electrons are moving towards or away from each other
+                    bool movingTowardsEachOther = dot_product < 0;
 
-                // Adjust the adjustment_factor based on the direction of movement
-                // Increase when moving towards each other, decrease when moving away
-                if (movingTowardsEachOther) {
-                    if (use_lorentz) {                   // Calculate the Lorentz factor (gamma)
-                        adjustment_factor = 1.0 / sqrt(1.0 - (relative_velocity_magnitude * relative_velocity_magnitude) / (speed_of_light * speed_of_light));
-                    } else{
-                        adjustment_factor = 1.0 + speed_ratio_bounded; // increases the force if moving towards each other
+                    // Adjust the adjustment_factor based on the direction of movement
+                    // Increase when moving towards each other, decrease when moving away
+                    if (movingTowardsEachOther) {
+                        if (use_lorentz) {                   // Calculate the Lorentz factor (gamma)
+                            adjustment_factor = 1.0 / sqrt(1.0 - (relative_velocity_magnitude * relative_velocity_magnitude) / (speed_of_light * speed_of_light));
+                        } else{
+                            adjustment_factor = 1.0 + speed_ratio_bounded; // increases the force if moving towards each other
+                        }
+                    } else {
+                        adjustment_factor = 1.0 - speed_ratio_bounded; // Reduce the force if moving away from each other
                     }
-                } else {
-                    adjustment_factor = 1.0 - speed_ratio_bounded; // Reduce the force if moving away from each other
                 }
 
 
@@ -945,7 +956,7 @@ blockspergrid = math.ceil(num_electrons/threadsperblock)
 #   forces = cp.zeros((num_electrons, 3))
 #
 def calculate_forces_cuda():
-    global electron_positions, electron_velocities, electron_past_positions, electron_past_velocities, past_positions_count, forces, num_electrons, coulombs_constant, electron_charge, dt, search_type, use_lorentz
+    global electron_positions, electron_velocities, electron_past_positions, electron_past_velocities, past_positions_count, forces, num_electrons, coulombs_constant, electron_charge, dt, search_type, use_lorentz, force_velocity_adjust
     # Launch kernel with the corrected arguments passing
     start_gpu = cp.cuda.Event()
     end_gpu = cp.cuda.Event()
@@ -956,7 +967,7 @@ def calculate_forces_cuda():
         start_gpu.record()
         calculate_forces(grid=(blockspergrid, 1, 1),
                      block=(threadsperblock, 1, 1),
-                     args=(electron_positions, electron_velocities, electron_past_positions, electron_past_velocities, past_positions_count, forces, num_electrons, coulombs_constant, electron_charge,dt, search_type, use_lorentz))
+                     args=(electron_positions, electron_velocities, electron_past_positions, electron_past_velocities, past_positions_count, forces, num_electrons, coulombs_constant, electron_charge,dt, search_type, use_lorentz, force_velocity_adjust))
         cp.cuda.Device().synchronize()    #  Let this finish before we do anything else
 
         end_gpu.record()
@@ -1048,6 +1059,11 @@ def main():
 
 
     os.makedirs('simulation', exist_ok=True) # Ensure the simulation directory exists
+    os.makedirs('velocity', exist_ok=True) # Ensure the simulation directory exists
+    os.makedirs('density', exist_ok=True) # Ensure the simulation directory exists
+    os.makedirs('amps', exist_ok=True) # Ensure the simulation directory exists
+    os.makedirs('speed', exist_ok=True) # Ensure the simulation directory exists
+
 
 
     # Create a LocalCluster with a custom death timeout and then a Client
@@ -1066,15 +1082,17 @@ def main():
         t = step * dt
         print("In main", step)
         GPUMem()
-        if step % wire_steps == 0:            #  XXXX probably best to do all of these at once each step 
+        if step % wire_steps == 0:            #  
             # WireStatus=calculate_wire_offset(electron_positions)                    # should do this for bound electrons
             # future = client.submit(visualize_wire, "Offset",  WireStatus, step, t)
-            density_plot, velocity_plot, amps_plot = calculate_plots()
+            density_plot, velocity_plot, amps_plot, speed_plot = calculate_plots()
             future = client.submit(visualize_wire, "Density", density_plot, step, t)
             futures.append(future)
             future = client.submit(visualize_wire, "Velocity", velocity_plot, step, t)
             futures.append(future)
             future = client.submit(visualize_wire, "Amps", amps_plot, step, t)
+            futures.append(future)
+            future = client.submit(visualize_wire, "Speed", speed_plot, step, t)
             futures.append(future)
         if step % display_steps == 0:
             print("Display", step)
