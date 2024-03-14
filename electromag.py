@@ -273,14 +273,11 @@ def load_arrays():
 def resolve_collisions():
     global electron_positions, electron_velocities, collision_count, collision_pairs
 
-    # Synchronize device to ensure the kernel has finished executing
-    cp.cuda.runtime.deviceSynchronize()
-
     # Read the number of collisions detected
     num_collisions = collision_count.item()  # Convert to a Python scalar
 
     # Read the collision pairs, and slice based on the actual number of collisions
-    collision_pairs_np = collision_pairs[:2 * num_collisions].get()  # Adjust for the correct slicing
+    collision_pairs_np = collision_pairs[:num_collisions].get()
 
     print(f"Number of collisions: {num_collisions}")
     print("Collision pairs (electron indexes):")
@@ -1140,8 +1137,8 @@ def main():
                 ("Density", density_plot),
                 ("Velocity", velocity_plot),
                 ("Amps", amps_plot),
-                ("Speed", speed_plot),
-                ("CappedVelocity", cappedvelocity_plot)
+                ("Speed", speed_plot)
+                #       ("CappedVelocity", cappedvelocity_plot)
             ]
             # Submit a single future for all plots
             future = client.submit(visualize_all_plots, step, t, plots)
