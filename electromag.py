@@ -267,51 +267,60 @@ def load_arrays():
 
 
 
-# Note 
+# Note  - CUDA kerel has made a list of collision_pairs that is collision_count long
 # electron_positions = cp.zeros((num_electrons, 3))
 # electron_velocities = cp.zeros((num_electrons, 3))
-def detect_and_resolve_collisions():
-    global  electron_positions, electron_velocities, collision_count, collision_pairs, collision_max, num_electrons
+def resolve_collisions():
+    global electron_positions, electron_velocities, collision_count, collision_pairs
 
     # Synchronize device to ensure the kernel has finished executing
-    # cp.cuda.runtime.deviceSynchronize()
+    cp.cuda.runtime.deviceSynchronize()
 
     # Read the number of collisions detected
     num_collisions = collision_count.item()  # Convert to a Python scalar
 
     # Read the collision pairs, and slice based on the actual number of collisions
-    actual_collision_pairs = collision_pairs[:num_collisions].get()
+    collision_pairs_np = collision_pairs[:2 * num_collisions].get()  # Adjust for the correct slicing
 
     print(f"Number of collisions: {num_collisions}")
     print("Collision pairs (electron indexes):")
-    print(actual_collision_pairs)
-    return
+    print(collision_pairs_np)
 
+    # Ensure each pair is sorted
+    sorted_pairs = np.sort(collision_pairs_np.reshape(num_collisions, 2), axis=1)  # Reshape and sort
 
-    diff = electron_positions[:, None, :] - electron_positions[None, :, :]  # Shape: (n, n, 3)
-    distances = cp.sqrt(cp.sum(diff**2, axis=2))  # Shape: (n, n)
-    colliding = distances < collision_distance    # at what distance we use collision logic
-    cp.fill_diagonal(colliding, False)            # Ignore self-collision
+    # Use np.unique to remove duplicates
+    dtype = [('first', sorted_pairs.dtype), ('second', sorted_pairs.dtype)]
+    unique_pairs = np.unique(sorted_pairs.view(dtype))
 
-    for i in range(num_electrons):
-        for j in range(i + 1, num_electrons):     # Avoid double processing pairs
-            if colliding[i, j]:                   # If collision 
-                # Calculate the unit vector in the direction of the collision
-                collision_vector = electron_positions[i] - electron_positons[j]
-                collision_vector /= cp.linalg.norm(collision_vector)
+    # Convert back to a 2D array
+    unique_pairs = unique_pairs.view(sorted_pairs.dtype).reshape(-1, 2)
 
-                v1=electron_velocities[i]
-                v2=electron_velocities[j]
-                # Calculate the projections of the velocities onto the collision vector
-                v1_proj = cp.dot(v1, collision_vector)
-                v2_proj = cp.dot(v2, collision_vector)
+    print("Unique collision pairs:")
+    print(unique_pairs)
 
-                # Swap the velocity components along the collision vector (elastic collision)
-                v1_new = v1 - v1_proj * collision_vector + v2_proj * collision_vector
-                v2_new = v2 - v2_proj * collision_vector + v1_proj * collision_vector
+    for i in range(len(unique_pairs)):
+        e1, e2 = unique_pairs[i]
+        collision_vector = electron_positions[e1] - electron_positions[e2]
+        collision_vector /= cp.linalg.norm(collision_vector)
 
-                electron_velocities[i] = v1_new
-                electron_velocities[j] = v2_new
+        v1 = electron_velocities[e1]
+        v2 = electron_velocities[e2]
+
+        # Calculate the projections of the velocities onto the collision vector
+        v1_proj = cp.dot(v1, collision_vector)
+        v2_proj = cp.dot(v2, collision_vector)
+
+        # Swap the velocity components along the collision vector (elastic collision)
+        v1_new = v1 - v1_proj * collision_vector + v2_proj * collision_vector
+        v2_new = v2 - v2_proj * collision_vector + v1_proj * collision_vector
+
+        electron_velocities[e1] = v1_new
+        electron_velocities[e2] = v2_new
+
+    # Zero out collision count for the next iteration
+    collision_count.fill(0)
+
 
 
 def generate_thermal_velocities():
@@ -1165,8 +1174,8 @@ def main():
         update_pv(dt)
 
         if (collision_on):                               # see if any new positons violate collision limit if on
-            print("detect and resolve collisions", t)
-            detect_and_resolve_collisions()
+            print("resolve collisions", t)
+            resolve_collisions()
 
         cp.cuda.Stream.null.synchronize()         # free memory on the GPU
         elapsed_time = time.time() - start_time           # Calculate elapsed time
