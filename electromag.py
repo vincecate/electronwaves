@@ -602,7 +602,7 @@ def calculate_plots():
     average_speeds = speed_sums / electron_counts_nonzero
 
     # Create a mask for velocities <= 3e6
-    capped_velocity_mask = x_velocities <= velocity_cap
+    capped_velocity_mask = cp.abs(x_velocities) <= velocity_cap
     # Apply mask to segment indices and velocities
     capped_segment_indices = segment_indices[capped_velocity_mask]
     capped_x_velocities = x_velocities[capped_velocity_mask]
