@@ -97,9 +97,6 @@ else:
 # cp.random.seed(999)
 
 
-effective_electron_mass = electron_mass   #  default is the same
-electron_thermal_speed = 1.1e6            # meters per second
-bounce_distance = 1e-10                   # closer than this and we make electrons bounce off each other
 
 # Making wider wires have deeper pulses so scaling is 3D to give better estimate for real wire extrapolation
 
@@ -137,7 +134,11 @@ pulse_velocity = sim_settings.get('pulse_velocity', 0)   # Have electrons in pul
 pulse_offset = sim_settings.get('pulse_offset', 0)   # X value offset for pulse 
 force_velocity_adjust = sim_settings.get('force_velocity_adjust', True)   # X value offset for pulse 
 velocity_cap = sim_settings.get('velocity_cap', 3e7)         # For the cappedvelocity output we ignore faster than this
+collision_distance = sim_settings.get('collision_distance', 1e-10)  # Less than this simulate a collision
+collision_on = sim_settings.get('collision_on', True)  # Simulate collisions 
+collision_max = sim_settings.get('collision_max', 1000) # Maximum number of collisions per time slice
 
+effective_electron_mass = electron_mass   #  default is the same
 # Initial electron speed 2,178,278 m/s
 # electron_speed= 2178278  
 electron_speed= 2188058
@@ -171,7 +172,7 @@ dt = speedup*proprange*initial_spacing/c/num_steps  # would like total simulatio
 
 
 # Make string of some settings to put on output graph 
-sim_settings = f"simnum {simnum} gridx {gridx} gridy {gridy} gridz {gridz} speedup {speedup} lorentz {use_lorentz}  \n Spacing: {initial_spacing:.8e} Pulse Width {pulse_width} ElcSpeed {electron_thermal_speed:.8e} Steps: {num_steps} dt: {dt:.8e} iv:{initialize_velocities} st:{search_type}"
+sim_settings = f"simnum {simnum} gridx {gridx} gridy {gridy} gridz {gridz} speedup {speedup} lorentz {use_lorentz}  \n Spacing: {initial_spacing:.8e} Pulse Width {pulse_width} Steps: {num_steps} dt: {dt:.8e} iv:{initialize_velocities} st:{search_type}"
 
 def GPUMem():
     # Get total and free memory in bytes
@@ -181,6 +182,14 @@ def GPUMem():
     print(f"Free GPU Memory: {free_mem / 1e9} GB")
 
 GPUMem()
+
+
+
+# Allocate memory for collision pairs (2 integers per collision)
+collision_pairs = cp.zeros((MAX_COLLISIONS, 2), dtype=cp.int32)
+
+# Allocate memory for the collision count (a single integer)
+collision_count = cp.zeros(1, dtype=cp.int32)
 
 
 
@@ -198,8 +207,6 @@ electron_past_positions = cp.zeros((num_electrons, past_positions_count, 3))   #
 electron_past_velocities = cp.zeros((num_electrons, past_positions_count, 3))   # keeping past positions with current at 0, previos 1, etc
 
 
-import cupy as cp
-import numpy as np
 
 def save_arrays():
     global filename_save, electron_positions, electron_velocities
@@ -260,56 +267,51 @@ def load_arrays():
 
 
 
-def calculate_collision_velocity(v1, v2, p1, p2):
-    """
-    Calculate the new velocities of two particles undergoing an elastic collision.
+# Note 
+# electron_positions = cp.zeros((num_electrons, 3))
+# electron_velocities = cp.zeros((num_electrons, 3))
+def detect_and_resolve_collisions():
+    global  electron_positions, electron_velocities, collision_distance, num_electrons
 
-    Args:
-        v1 (ndarray): Velocity of the first particle before collision.
-        v2 (ndarray): Velocity of the second particle before collision.
-        p1 (ndarray): Position of the first particle.
-        p2 (ndarray): Position of the second particle.
+    # Synchronize device to ensure the kernel has finished executing
+    # cp.cuda.runtime.deviceSynchronize()
 
-    Returns:
-        Tuple[ndarray, ndarray]: New velocities of the first and second particles.
-    """
-    # Calculate the unit vector in the direction of the collision
-    collision_vector = p1 - p2
-    collision_vector /= cp.linalg.norm(collision_vector)
+    # Read the number of collisions detected
+    num_collisions = collision_count.item()  # Convert to a Python scalar
 
-    # Calculate the projections of the velocities onto the collision vector
-    v1_proj = cp.dot(v1, collision_vector)
-    v2_proj = cp.dot(v2, collision_vector)
+    # Read the collision pairs, and slice based on the actual number of collisions
+    actual_collision_pairs = collision_pairs[:num_collisions].get()
 
-    # Swap the velocity components along the collision vector (elastic collision)
-    v1_new = v1 - v1_proj * collision_vector + v2_proj * collision_vector
-    v2_new = v2 - v2_proj * collision_vector + v1_proj * collision_vector
-
-    return v1_new, v2_new
+    print(f"Number of collisions: {num_collisions}")
+    print("Collision pairs (electron indexes):")
+    print(actual_collision_pairs)
+    return
 
 
-
-
-
-def detect_collisions(electron_positions, bounce_distance):
-    n_electrons = electron_positions.shape[0]
     diff = electron_positions[:, None, :] - electron_positions[None, :, :]  # Shape: (n, n, 3)
     distances = cp.sqrt(cp.sum(diff**2, axis=2))  # Shape: (n, n)
-    colliding = distances < bounce_distance
-    cp.fill_diagonal(colliding, False)  # Ignore self-collision
-    return colliding
+    colliding = distances < collision_distance    # at what distance we use collision logic
+    cp.fill_diagonal(colliding, False)            # Ignore self-collision
 
+    for i in range(num_electrons):
+        for j in range(i + 1, num_electrons):     # Avoid double processing pairs
+            if colliding[i, j]:                   # If collision 
+                # Calculate the unit vector in the direction of the collision
+                collision_vector = electron_positions[i] - electron_positons[j]
+                collision_vector /= cp.linalg.norm(collision_vector)
 
-#  This is just swapping velocities which is not accurate
-def resolve_collisions(electron_positions, electron_velocities, bounce_distance):
-    colliding = detect_collisions(electron_positions, bounce_distance)
-    n_electrons = electron_positions.shape[0]
+                v1=electron_velocities[i]
+                v2=electron_velocities[j]
+                # Calculate the projections of the velocities onto the collision vector
+                v1_proj = cp.dot(v1, collision_vector)
+                v2_proj = cp.dot(v2, collision_vector)
 
-    for i in range(n_electrons):
-        for j in range(i + 1, n_electrons):  # Avoid double processing pairs
-            if colliding[i, j]:
-                # Simplified collision resolution: Swap velocities
-                electron_velocities[i], electron_velocities[j] = electron_velocities[j], electron_velocities[i]
+                # Swap the velocity components along the collision vector (elastic collision)
+                v1_new = v1 - v1_proj * collision_vector + v2_proj * collision_vector
+                v2_new = v2 - v2_proj * collision_vector + v1_proj * collision_vector
+
+                electron_velocities[i] = v1_new
+                electron_velocities[j] = v2_new
 
 
 def generate_thermal_velocities():
@@ -349,7 +351,7 @@ def generate_thermal_velocities():
 
 def initialize_electrons_sine_wave():
     global initial_radius, electron_velocities, electron_positions, num_electrons, electron_past_positions
-    global initial_spacing, initialize_velocities, electron_speed, pulse_width, electron_thermal_speed, gridx, gridy, gridz, past_positions_count
+    global initial_spacing, initialize_velocities, electron_speed, pulse_width, gridx, gridy, gridz, past_positions_count
 
     print("initialize_electrons_sine_wave")
 
@@ -396,7 +398,7 @@ def initialize_electrons_sine_wave():
 # electron_past_positions = cp.zeros((num_electrons, past_positions_count, 3))   # keeping past positions with current at 0, previos 1, etc
 def initialize_electrons():
     global initial_radius, electron_velocities, electron_positions, num_electrons, electron_past_positions, pulse_density
-    global initial_spacing, initialize_velocities, electron_speed, pulse_width, electron_thermal_speed, gridx, gridy, gridz
+    global initial_spacing, initialize_velocities, electron_speed, pulse_width, gridx, gridy, gridz
 
     # Calculate the adjusted number of electrons for the pulse and rest regions to match the num_electrons
     # Ensure total electrons do not exceed num_electrons while maintaining higher density in the pulse region
@@ -739,9 +741,6 @@ def calculate_forces_chunked():
 def calculate_forces_all():
     global electron_positions, forces, coulombs_constant, electron_charge
 
-    # Number of electrons
-    n_electrons = electron_positions.shape[0]
-
     # Expand electron_positions to calculate pairwise differences (broadcasting)
     delta_r = electron_positions[:, None, :] - electron_positions[None, :, :]
     
@@ -851,7 +850,10 @@ extern "C" __global__ void calculate_forces(const double3* electron_positions, c
                                 double dt,
                                 int search_type,
                                 bool use_lorentz,
-                                bool force_velocity_adjust) {
+                                bool force_velocity_adjust,
+                                int collision_max,
+                                int* collision_count,
+                                int* collision_pairs) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     const double speed_of_light = 299792458.0; // Speed of light in meters per second
 
@@ -894,6 +896,13 @@ extern "C" __global__ void calculate_forces(const double3* electron_positions, c
                     current_position.z - delayed_position.z);
 
                 double dist_sq = r.x * r.x + r.y * r.y + r.z * r.z;
+                if (dist_sq < collision_distance * collision_distance) {
+                    int collision_id = atomicAdd(collision_count, 1);
+                    if (collision_id < max_collisions) {
+                        collision_pairs[2 * collision_id] = i;           # record this electron
+                        collision_pairs[2 * collision_id + 1] = j;       # and one we collide with
+                    }
+                }
                 dist_sq = max(dist_sq, 1.0e-30); // avoid divide by zero
 
                 double len_inv = rsqrt(dist_sq); // reciprocal square root
@@ -985,7 +994,7 @@ blockspergrid = math.ceil(num_electrons/threadsperblock)
 #   forces = cp.zeros((num_electrons, 3))
 #
 def calculate_forces_cuda():
-    global electron_positions, electron_velocities, electron_past_positions, electron_past_velocities, past_positions_count, forces, num_electrons, coulombs_constant, electron_charge, dt, search_type, use_lorentz, force_velocity_adjust
+    global electron_positions, electron_velocities, electron_past_positions, electron_past_velocities, past_positions_count, forces, num_electrons, coulombs_constant, electron_charge, dt, search_type, use_lorentz, force_velocity_adjust, collision_max, collision_count, collision_pairs
     # Launch kernel with the corrected arguments passing
     start_gpu = cp.cuda.Event()
     end_gpu = cp.cuda.Event()
@@ -1154,8 +1163,9 @@ def main():
         print("Updating position and velocity", t)
         update_pv(dt)
 
-        #print("detect and resolve collisions", t)
-        #detect_and_resolve_collisions()
+        if (collision_on):                               # see if any new positons violate collision limit if on
+            print("detect and resolve collisions", t)
+            detect_and_resolve_collisions()
 
         cp.cuda.Stream.null.synchronize()         # free memory on the GPU
         elapsed_time = time.time() - start_time           # Calculate elapsed time
