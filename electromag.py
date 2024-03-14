@@ -287,9 +287,10 @@ def resolve_collisions():
     print(collision_pairs_np)
 
     # Ensure each pair is sorted
-    sorted_pairs = np.sort(collision_pairs_np.reshape(num_collisions, 2), axis=1)  # Reshape and sort
+    sorted_pairs = np.sort(collision_pairs_np, axis=1)
 
-    # Use np.unique to remove duplicates
+    # Use np.unique to remove duplicates. Since np.unique works on 1D arrays,
+    # we view the 2D array as a structured array to treat each row as an element.
     dtype = [('first', sorted_pairs.dtype), ('second', sorted_pairs.dtype)]
     unique_pairs = np.unique(sorted_pairs.view(dtype))
 
