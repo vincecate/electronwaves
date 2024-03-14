@@ -1,0 +1,13 @@
+#!/bin/bash
+
+
+# Get the PID of go.result without getting the grep process itself
+pid=$(ps -auxww | grep '[g]o.result' | awk '{print $2}')
+kill $pid
+
+
+# Get the PID of electromag.py without getting the grep process itself
+pid=$(ps -auxww | grep '[e]lectromag.py' | awk '{print $2}')
+kill $pid
+
+
