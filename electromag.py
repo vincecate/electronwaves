@@ -1138,7 +1138,7 @@ def main():
                 ("Velocity", velocity_plot),
                 ("Amps", amps_plot),
                 ("Speed", speed_plot)
-                #       ("CappedVelocity", cappedvelocity_plot)
+                ("CappedVelocity", cappedvelocity_plot)
             ]
             # Submit a single future for all plots
             future = client.submit(visualize_all_plots, step, t, plots)
