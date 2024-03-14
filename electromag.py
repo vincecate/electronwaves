@@ -1137,7 +1137,7 @@ def main():
                 ("Density", density_plot),
                 ("Velocity", velocity_plot),
                 ("Amps", amps_plot),
-                ("Speed", speed_plot)
+                ("Speed", speed_plot),
                 ("CappedVelocity", cappedvelocity_plot)
             ]
             # Submit a single future for all plots
