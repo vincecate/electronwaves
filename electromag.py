@@ -631,6 +631,7 @@ def calculate_plots():
 
 # Given an array with values we plot it
 #  Can be used for offset, density, velocity, current  along the wire
+#  use ylabel.lower() for directory name as well
 def visualize_wire(ylabel, yvalues, step, t):
     # Plotting
     fig, ax = plt.subplots(figsize=(12.8, 9.6))
@@ -651,6 +652,17 @@ def visualize_wire(ylabel, yvalues, step, t):
     plt.savefig(filename)
     plt.close(fig)  # Close the figure to free memory
 
+
+def visualize_all_plots(step, t, plots):
+    """
+    Function to handle visualization of all plots.
+
+    :param step: The current simulation step.
+    :param t: The current simulation time.
+    :param plots: A list of tuples, each containing the label and the values for a plot.
+    """
+    for ylabel, yvalues in plots:
+        visualize_wire(ylabel, yvalues, step, t)
 
 
 
@@ -1104,15 +1116,15 @@ def main():
             # WireStatus=calculate_wire_offset(electron_positions)                    # should do this for bound electrons
             # future = client.submit(visualize_wire, "Offset",  WireStatus, step, t)
             density_plot, velocity_plot, amps_plot, speed_plot, cappedvelocity_plot = calculate_plots()
-            future = client.submit(visualize_wire, "Density", density_plot, step, t)
-            futures.append(future)
-            future = client.submit(visualize_wire, "Velocity", velocity_plot, step, t)
-            futures.append(future)
-            future = client.submit(visualize_wire, "Amps", amps_plot, step, t)
-            futures.append(future)
-            future = client.submit(visualize_wire, "Speed", speed_plot, step, t)
-            futures.append(future)
-            future = client.submit(visualize_wire, "CappedVelocity", cappedvelocity_plot, step, t)
+            plots = [
+                ("Density", density_plot),
+                ("Velocity", velocity_plot),
+                ("Amps", amps_plot),
+                ("Speed", speed_plot),
+                ("CappedVelocity", cappedvelocity_plot)
+            ]
+            # Submit a single future for all plots
+            future = client.submit(visualize_all_plots, step, t, plots)
             futures.append(future)
         if step % display_steps == 0:
             print("Display", step)
@@ -1159,9 +1171,6 @@ def main():
     futures.append(future)
     wait(futures)
     save_arrays()
-
-
-
 
 
 

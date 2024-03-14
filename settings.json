@@ -328,9 +328,9 @@
     "filename_save": "simulation.28.data",
     "initialize_wave":true,
     "past_positions_count":100,
-    "estimated_hours":4,
+    "estimated_hours":8,
     "force_velocity_adjust":false,
-    "num_steps": 1000
+    "num_steps": 2000
   }
 }
 
