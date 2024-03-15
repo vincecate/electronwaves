@@ -420,7 +420,7 @@ def initialize_electrons():
     # Calculate the adjusted number of electrons for the pulse and rest regions to match the num_electrons
     # Ensure total electrons do not exceed num_electrons while maintaining higher density in the pulse region
     pulse_volume_ratio = pulse_width / gridx
-    adjusted_pulse_electrons = int(num_electrons * pulse_volume_ratio * pulse_density)  # Double density in pulse region
+    adjusted_pulse_electrons = int(num_electrons * pulse_volume_ratio * pulse_density)  # higher density in pulse region
     rest_electrons = num_electrons - adjusted_pulse_electrons
 
     # Generate random positions for electrons

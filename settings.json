@@ -320,18 +320,22 @@
     "gridy": 20,
     "gridz": 20,
     "speedup": 1,
-    "initialize_velocities": false,
+    "initialize_velocities": true,
     "boltz_temp": 300.0,
     "wire_steps":  1,
     "search_type": 2,
     "use_lorentz": false,
     "filename_save": "simulation.28.data",
     "initialize_wave":true,
-    "past_positions_count":100,
+    "past_positions_count":400,
+    "pulse_width": 100,
+    "pulse_offset": 100,
+    "pulse_density":1.001,
+    "pulse_velocity": 1e7,
     "estimated_hours":8,
     "force_velocity_adjust":true,
     "collision_distance":2e-10,
-    "num_steps": 2000
+    "num_steps": 3000
   }
 }
 
