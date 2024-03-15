@@ -279,9 +279,9 @@ def resolve_collisions():
     # Read the collision pairs, and slice based on the actual number of collisions
     collision_pairs_np = collision_pairs[:num_collisions].get()
 
-    print(f"Number of collisions: {num_collisions}")
-    print("Collision pairs (electron indexes):")
-    print(collision_pairs_np)
+    print(f"Number of collisions when double counting: {num_collisions}")
+    #print("Collision pairs (electron indexes):")
+    #print(collision_pairs_np)
 
     # Ensure each pair is sorted
     sorted_pairs = np.sort(collision_pairs_np, axis=1)
