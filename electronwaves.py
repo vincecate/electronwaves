@@ -133,7 +133,6 @@ initialize_wave = sim_settings.get('initialize_wave', True)   # Try to initializ
 pulse_velocity = sim_settings.get('pulse_velocity', 0)   # Have electrons in pulse area moving
 pulse_offset = sim_settings.get('pulse_offset', 0)   # X value offset for pulse 
 force_velocity_adjust = sim_settings.get('force_velocity_adjust', True)   # X value offset for pulse 
-velocity_cap = sim_settings.get('velocity_cap', 3e7)         # For the cappedvelocity output we ignore faster than this
 collision_distance = sim_settings.get('collision_distance', 1e-10)  # Less than this simulate a collision
 collision_on = sim_settings.get('collision_on', True)  # Simulate collisions 
 collision_max = sim_settings.get('collision_max', 1000) # Maximum number of collisions per time slice
@@ -597,9 +596,9 @@ def calculate_wire_offset(epositions):
 
 
 
-#  returns  (density, velocity, amps, speed, cappedvelocity)    - for plotting to files
+#  returns  (density, velocity, amps, speed )    - for plotting to files
 def calculate_plots():
-    global electron_positions, electron_velocities, gridx, gridy, gridz, initial_spacing, electron_charge, velocity_cap
+    global electron_positions, electron_velocities, gridx, gridy, gridz, initial_spacing, electron_charge, velocity_cap, dt
 
     # Get x positions and velocities from the 2D arrays
     x_positions = electron_positions[:, 0]
@@ -624,28 +623,14 @@ def calculate_plots():
     average_xvelocities = xvelocity_sums / electron_counts_nonzero
     average_speeds = speed_sums / electron_counts_nonzero
 
-    # Create a mask for velocities <= 3e6
-    capped_velocity_mask = cp.abs(x_velocities) <= velocity_cap
-    # Apply mask to segment indices and velocities
-    capped_segment_indices = segment_indices[capped_velocity_mask]
-    capped_x_velocities = x_velocities[capped_velocity_mask]
-    
-    # Calculate sums of capped velocities
-    capped_xvelocity_sums = cp.bincount(capped_segment_indices, weights=capped_x_velocities, minlength=gridx)
-    capped_electron_counts = cp.bincount(capped_segment_indices, minlength=gridx)
-    capped_electron_counts_nonzero = cp.where(capped_electron_counts == 0, 1, capped_electron_counts)
-    
-    # Calculate average velocities with cap
-    capped_average_xvelocities = capped_xvelocity_sums / capped_electron_counts_nonzero
-
     # Calculate wire slice volume and electron density
     wire_slice_volume = initial_spacing * (gridy * initial_spacing) * (gridz * initial_spacing)
     electron_density = electron_counts / wire_slice_volume
 
     # Calculate current in each segment
-    amps = electron_density * average_xvelocities * electron_charge
+    amps = electron_density * average_xvelocities * electron_charge * dt
 
-    return electron_counts.get(), average_xvelocities.get(), amps.get(), average_speeds.get(), capped_average_xvelocities.get()
+    return electron_counts.get(), average_xvelocities.get(), amps.get(), average_speeds.get() 
 
 
 
@@ -1177,7 +1162,6 @@ def main():
     os.makedirs('density', exist_ok=True) # Ensure the simulation directory exists
     os.makedirs('amps', exist_ok=True) # Ensure the simulation directory exists
     os.makedirs('speed', exist_ok=True) # Ensure the simulation directory exists
-    os.makedirs('cappedvelocity', exist_ok=True) # Ensure the simulation directory exists
 
 
 
@@ -1200,13 +1184,12 @@ def main():
         if step % wire_steps == 0:            #  
             # WireStatus=calculate_wire_offset(electron_positions)                    # should do this for bound electrons
             # future = client.submit(visualize_wire, "Offset",  WireStatus, step, t)
-            density_plot, velocity_plot, amps_plot, speed_plot, cappedvelocity_plot = calculate_plots()
+            density_plot, velocity_plot, amps_plot, speed_plot = calculate_plots()
             plots = [
                 ("Density", density_plot),
                 ("Velocity", velocity_plot),
                 ("Amps", amps_plot),
                 ("Speed", speed_plot)
-                # ("CappedVelocity", cappedvelocity_plot)
             ]
             # Submit a single future for all plots
             future = client.submit(visualize_all_plots, step, t, plots)
