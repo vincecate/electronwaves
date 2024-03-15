@@ -1080,7 +1080,9 @@ def apply_driving_current():
             chosen_indices = indices_of_electrons_to_move
         
         # Move selected electrons to the start of the wire
-        electron_positions[chosen_indices, 0] = initial_spacing/2.0  # Move to middle of the first slice of wire
+        # Randomly select new positions between 0.1 * initial_spacing and initial_spacing for each electron
+        new_positions = cp.random.uniform(0.1 * initial_spacing, initial_spacing, size=len(chosen_indices))
+        electron_positions[chosen_indices, 0] = new_positions  # Update positions with random values in the specified range
         electron_velocities[chosen_indices] = 0  # Reset their velocities to 0
 
         print(f"{len(chosen_indices)} electrons moved from right to left to apply driving current.")
@@ -1089,6 +1091,7 @@ def apply_driving_current():
 
 
 
+  
 
 def print_forces_sum():
     global forces, num_electrons
