@@ -1056,7 +1056,6 @@ def calculate_forces_cuda():
 #  We can initialize the velocity after the move to zero.
 def apply_driving_current():
     global electron_positions, electron_velocities, electron_is_active, num_electrons, electron_charge
-    print("apply_driving_current")
 
     # Constants
     volume_of_wire = gridx * gridy * gridz * (initial_spacing ** 3)  # Volume of the wire
@@ -1237,12 +1236,13 @@ def main():
         print("Updating position and velocity", t)
         update_pv(dt)
 
-        if (collision_on):                               # see if any new positons violate collision limit if on
+        if (driving_current > 0):                 # we move some electrons from right edge of wire to left
+            print("apply_driving_current")        # do this before checking for collisions
+            apply_driving_current()
+
+        if (collision_on):                        # see if any new positons violate collision limit if on
             print("resolve collisions", t)
             resolve_collisions()
-
-        if (driving_current > 0):
-            apply_driving_current()
 
         cp.cuda.Stream.null.synchronize()         # free memory on the GPU
         elapsed_time = time.time() - start_time           # Calculate elapsed time
