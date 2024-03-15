@@ -21,6 +21,6 @@ mkdir -p velocity
 mkdir -p density
 mkdir -p amps
 mkdir -p speed
-./electromag.py $1
+./electronwaves.py $1
 
 

@@ -137,6 +137,8 @@ velocity_cap = sim_settings.get('velocity_cap', 3e7)         # For the cappedvel
 collision_distance = sim_settings.get('collision_distance', 1e-10)  # Less than this simulate a collision
 collision_on = sim_settings.get('collision_on', True)  # Simulate collisions 
 collision_max = sim_settings.get('collision_max', 1000) # Maximum number of collisions per time slice
+driving_current = sim_settings.get('driving_current', 0.0) # Amps applied to wire 
+driving_voltage = sim_settings.get('driving_voltage', 0.0) # Maximum number of collisions per time slice
 
 effective_electron_mass = electron_mass   #  default is the same
 # Initial electron speed 2,178,278 m/s
@@ -197,11 +199,12 @@ collision_count = cp.zeros(1, dtype=cp.int32)
 num_electrons = gridx * gridy * gridz
 chunk_size = gridx*gridy
 # Initialize CuPy/GPU arrays for positions, velocities , and forces as "2D" arrays but really 1D with 3 storage at each index for x,y,z
+electron_is_active = cp.zeros(num_electrons, dtype=bool)   # To take electrons off the right end and add to left
 electron_positions = cp.zeros((num_electrons, 3))
 electron_velocities = cp.zeros((num_electrons, 3))
 forces = cp.zeros((num_electrons, 3))
-electron_is_bound = cp.zeros(num_electrons, dtype=bool)   # if True then electron is bound to an atom, if flase then free
-electron_atom_center = cp.zeros((num_electrons, 3))       # atom position that spring for bound electron is attached to
+#electron_is_bound = cp.zeros(num_electrons, dtype=bool)   # if True then electron is bound to an atom, if flase then free
+#electron_atom_center = cp.zeros((num_electrons, 3))       # atom position that spring for bound electron is attached to
 
 electron_past_positions = cp.zeros((num_electrons, past_positions_count, 3))   # keeping past positions with current at 0, previos 1, etc
 electron_past_velocities = cp.zeros((num_electrons, past_positions_count, 3))   # keeping past positions with current at 0, previos 1, etc
@@ -405,7 +408,7 @@ def initialize_electrons_sine_wave():
     # Initialize past positions array
     electron_past_positions = cp.tile(electron_positions[:, None, :], (1, past_positions_count, 1))
 
-    # Additional steps to set up velocities and past positions as needed...
+    electron_is_active.fill(True)                       # for now all electrons are active
 
 
 # When done with initialize_electrons these two arrays should have this shape
@@ -459,6 +462,7 @@ def initialize_electrons():
     # This makes its shape (num_electrons, 1, 3), which is compatible for broadcasting across the past_positions dimension
     # The assignment then replicates the current position across all past positions for each electron
 
+    electron_is_active.fill(True)                       # for now all electrons are active
 
 
 #  Want to make visualization something we can hand off to a dask core to work on
@@ -871,14 +875,15 @@ extern "C" __global__ void calculate_forces(const double3* electron_positions, c
                                 int collision_max,
                                 int* collision_count,
                                 int* collision_pairs,
-                                double collision_distance) {
+                                double collision_distance,
+                                bool* electron_is_active) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     const double speed_of_light = 299792458.0; // Speed of light in meters per second
 
     if (threadIdx.x == 0 && blockIdx.x == 0)
         printf("[CUDA-Cupy] num_electrons %d\\n", num_electrons );  // print once per kernel launch
 
-    if (i < num_electrons) {
+    if (i < num_electrons && electron_is_active[i]) {
         double3 force = make_double3(0.0, 0.0, 0.0);
         double3 current_position = electron_positions[i];
         double3 current_velocity = electron_velocities[i];
@@ -1012,7 +1017,7 @@ blockspergrid = math.ceil(num_electrons/threadsperblock)
 #   forces = cp.zeros((num_electrons, 3))
 #
 def calculate_forces_cuda():
-    global electron_positions, electron_velocities, electron_past_positions, electron_past_velocities, past_positions_count, forces, num_electrons, coulombs_constant, electron_charge, dt, search_type, use_lorentz, force_velocity_adjust, collision_max, collision_count, collision_pairs, collision_distance
+    global electron_positions, electron_velocities, electron_past_positions, electron_past_velocities, past_positions_count, forces, num_electrons, coulombs_constant, electron_charge, dt, search_type, use_lorentz, force_velocity_adjust, collision_max, collision_count, collision_pairs, collision_distance, electron_is_active
     # Launch kernel with the corrected arguments passing
     start_gpu = cp.cuda.Event()
     end_gpu = cp.cuda.Event()
@@ -1023,7 +1028,7 @@ def calculate_forces_cuda():
         start_gpu.record()
         calculate_forces(grid=(blockspergrid, 1, 1),
                      block=(threadsperblock, 1, 1),
-                     args=(electron_positions, electron_velocities, electron_past_positions, electron_past_velocities, past_positions_count, forces, num_electrons, coulombs_constant, electron_charge,dt, search_type, use_lorentz, force_velocity_adjust, collision_max, collision_count, collision_pairs, collision_distance))
+                     args=(electron_positions, electron_velocities, electron_past_positions, electron_past_velocities, past_positions_count, forces, num_electrons, coulombs_constant, electron_charge,dt, search_type, use_lorentz, force_velocity_adjust, collision_max, collision_count, collision_pairs, collision_distance, electron_is_active))
         cp.cuda.Device().synchronize()    #  Let this finish before we do anything else
 
         end_gpu.record()
@@ -1034,6 +1039,57 @@ def calculate_forces_cuda():
     except cp.cuda.CUDARuntimeError as e:
         print(f"CUDA Error: {e}")
     print("ending calculate_forces_cuda")
+
+# Note gobal arrays are defined as:
+#electron_is_active = cp.zeros(num_electrons, dtype=bool)   # To take electrons off the right end and add to left
+#electron_positions = cp.zeros((num_electrons, 3))
+#electron_velocities = cp.zeros((num_electrons, 3))
+#float driving_current
+#float dt       # float time interval for simulation
+#
+# This is called once per dt time.
+# We want to remove enough electrons from the right and add to the left
+# to make the amps for this equal to driving_current for this dt.
+# The wire is gridx units long and gridy and gridz high/wide each unit being initial_spacing.
+# We use CuPy to find electrons in the last part of the wire and then 
+#  randomly pick enough to move to the first part of the wire.
+#  We can initialize the velocity after the move to zero.
+def apply_driving_current():
+    global electron_positions, electron_velocities, electron_is_active, num_electrons, electron_charge
+    print("apply_driving_current")
+
+    # Constants
+    volume_of_wire = gridx * gridy * gridz * (initial_spacing ** 3)  # Volume of the wire
+    density_of_electrons = num_electrons / volume_of_wire  # Electron density
+    current_density = driving_current / (gridy * gridz * (initial_spacing ** 2))  # Current density (A/m^2)
+
+    # The required change in the number of electrons based on the current and time interval
+    required_charge_transfer = driving_current * dt  # Total charge to transfer
+    num_electrons_to_move = int(cp.floor(required_charge_transfer / electron_charge))
+
+    # Identify electrons in the last part of the wire
+    right_end_electrons = electron_positions[:, 0] >= ((gridx -3) * initial_spacing)
+    indices_of_electrons_to_move = cp.where(right_end_electrons)[0]
+    
+    # Check if there are any electrons to move
+    if indices_of_electrons_to_move.size > 0:
+        if len(indices_of_electrons_to_move) > num_electrons_to_move:
+            # If more electrons are available than needed, randomly select a subset
+            chosen_indices = cp.random.choice(indices_of_electrons_to_move, size=num_electrons_to_move, replace=False)
+        else:
+            # If fewer electrons are available than needed, move all of them
+            chosen_indices = indices_of_electrons_to_move
+        
+        # Move selected electrons to the start of the wire
+        electron_positions[chosen_indices, 0] = initial_spacing/2.0  # Move to middle of the first slice of wire
+        electron_velocities[chosen_indices] = 0  # Reset their velocities to 0
+
+        print(f"{len(chosen_indices)} electrons moved from right to left to apply driving current.")
+    else:
+        print("No electrons in the rightmost segment to move.")
+
+
+
 
 def print_forces_sum():
     global forces, num_electrons
@@ -1147,8 +1203,8 @@ def main():
                 ("Density", density_plot),
                 ("Velocity", velocity_plot),
                 ("Amps", amps_plot),
-                ("Speed", speed_plot),
-                ("CappedVelocity", cappedvelocity_plot)
+                ("Speed", speed_plot)
+                # ("CappedVelocity", cappedvelocity_plot)
             ]
             # Submit a single future for all plots
             future = client.submit(visualize_all_plots, step, t, plots)
@@ -1184,6 +1240,9 @@ def main():
         if (collision_on):                               # see if any new positons violate collision limit if on
             print("resolve collisions", t)
             resolve_collisions()
+
+        if (driving_current > 0):
+            apply_driving_current()
 
         cp.cuda.Stream.null.synchronize()         # free memory on the GPU
         elapsed_time = time.time() - start_time           # Calculate elapsed time
