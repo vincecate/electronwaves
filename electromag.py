@@ -297,27 +297,37 @@ def resolve_collisions():
     print("Unique collision pairs:")
     print(unique_pairs)
 
+    # Assuming 'collision_distance' is defined elsewhere in your code
+    desired_separation = 2 * collision_distance  # The target separation distance
+
     for i in range(len(unique_pairs)):
         e1, e2 = unique_pairs[i]
         collision_vector = electron_positions[e1] - electron_positions[e2]
-        collision_vector /= cp.linalg.norm(collision_vector)
+        norm_collision_vector = cp.linalg.norm(collision_vector)
+        collision_vector_normalized = collision_vector / norm_collision_vector
 
         v1 = electron_velocities[e1]
         v2 = electron_velocities[e2]
 
         # Calculate the projections of the velocities onto the collision vector
-        v1_proj = cp.dot(v1, collision_vector)
-        v2_proj = cp.dot(v2, collision_vector)
+        v1_proj = cp.dot(v1, collision_vector_normalized)
+        v2_proj = cp.dot(v2, collision_vector_normalized)
 
         # Swap the velocity components along the collision vector (elastic collision)
-        v1_new = v1 - v1_proj * collision_vector + v2_proj * collision_vector
-        v2_new = v2 - v2_proj * collision_vector + v1_proj * collision_vector
+        v1_new = v1 - v1_proj * collision_vector_normalized + v2_proj * collision_vector_normalized
+        v2_new = v2 - v2_proj * collision_vector_normalized + v1_proj * collision_vector_normalized
 
         electron_velocities[e1] = v1_new
         electron_velocities[e2] = v2_new
 
+        # Adjust positions to ensure they are more than the desired_separation apart
+        separation_correction = (desired_separation - norm_collision_vector) / 2
+        electron_positions[e1] += separation_correction * collision_vector_normalized
+        electron_positions[e2] -= separation_correction * collision_vector_normalized
+
     # Zero out collision count for the next iteration
     collision_count.fill(0)
+
 
 
 
