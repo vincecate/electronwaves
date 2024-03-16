@@ -599,7 +599,7 @@ def calculate_wire_offset(epositions):
 
 #  returns  (density, velocity, amps, speed )    - for plotting to files
 def calculate_plots():
-    global electron_positions, electron_velocities, gridx, gridy, gridz, initial_spacing, electron_charge, velocity_cap, dt
+    global electron_positions, electron_velocities, gridx, gridy, gridz, initial_spacing, electron_charge, dt
 
     # Get x positions and velocities from the 2D arrays
     x_positions = electron_positions[:, 0]
@@ -620,18 +620,25 @@ def calculate_plots():
     # Avoid division by zero
     electron_counts_nonzero = cp.where(electron_counts == 0, 1, electron_counts)
     
-    # Calculate average velocities and speeds
-    average_xvelocities = xvelocity_sums / electron_counts_nonzero
+    # Calculate average velocities (drift_velocity)  and speeds
+    drift_velocities = xvelocity_sums / electron_counts_nonzero
     average_speeds = speed_sums / electron_counts_nonzero
 
     # Calculate wire slice volume and electron density
     wire_slice_volume = initial_spacing * (gridy * initial_spacing) * (gridz * initial_spacing)
     electron_density = electron_counts / wire_slice_volume
 
-    # Calculate current passing through area of slice in wire 
-    amps = electron_density * average_xvelocities * electron_charge    # coulombs_per_electron = abs(electron_charge) but sign useful
+    # Calculate current density (A/m^2)
+    current_density = electron_density * drift_velocities * electron_charge   # coulombs_per_electron=abs(electron_charge) but like sign
 
-    return electron_counts.get(), average_xvelocities.get(), amps.get(), average_speeds.get() 
+    # Calculate cross-sectional area of the wire slice (m^2) we want to measure current through
+    cross_sectional_area = (gridy * initial_spacing) * (gridz * initial_spacing)
+
+    # Calculate current (A) by multiplying current density with cross-sectional area
+    amps = current_density * cross_sectional_area
+
+
+    return electron_counts.get(), drift_velocities.get(), amps.get(), average_speeds.get()   # numpy so can pass to futures
 
 
 
@@ -1053,7 +1060,7 @@ def apply_driving_current():
     electrons_per_dt = int(cp.floor(coulombs_per_dt * electrons_per_coulomb ))  # want int number of electrons to move
 
     # Identify electrons in the last part of the wire
-    right_end_electrons = electron_positions[:, 0] >= ((gridx -3) * initial_spacing)
+    right_end_electrons = electron_positions[:, 0] >= ((0.99*gridx) * initial_spacing)
     indices_of_electrons_to_move = cp.where(right_end_electrons)[0]
     
     # Check if there are any electrons to move

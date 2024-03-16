@@ -341,7 +341,7 @@
     "gridx": 500,
     "gridy": 20,
     "gridz": 20,
-    "speedup": 20,
+    "speedup": 2,
     "initialize_velocities": true,
     "boltz_temp": 300.0,
     "wire_steps":  1,
@@ -349,13 +349,13 @@
     "use_lorentz": false,
     "filename_save": "simulation.29.data",
     "initialize_wave":true,
-    "past_positions_count":100,
+    "past_positions_count":200,
     "pulse_width": 0,
     "force_velocity_adjust":true,
     "collision_on":true,
     "collision_distance":2e-10,
     "driving_current":1,
-    "num_steps": 1000
+    "num_steps": 2000
   }
 }
 
