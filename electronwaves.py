@@ -297,7 +297,7 @@ def latice_collisions():
 
     # Update velocities after collision using a simple model
     # For a more accurate model, you might simulate the actual direction and magnitude based on boltz_temp
-    thermal_velocity = cp.sqrt(2 * Boltzman * boltz_temp / electron_mass)
+    thermal_velocity = cp.sqrt(2 * Boltzmann * boltz_temp / electron_mass)
     direction = cp.random.normal(size=(num_electrons, 3))
     direction /= cp.linalg.norm(direction, axis=1)[:, cp.newaxis]  # Normalize to get direction vectors
     electron_velocities[collide] = direction[collide] * thermal_velocity
@@ -368,15 +368,11 @@ def resolve_collisions():
 
 
 def generate_thermal_velocities():
-    global num_electrons, boltz_temp, Boltzman, electron_mass
+    global num_electrons, boltz_temp, Boltzmann, electron_mass
     """
     Generates random thermal velocity vectors for a given number of electrons
     at a specified temperature. The Maxwell-Boltzmann distribution is used to
     determine the magnitudes of the velocities.
-
-    Args:
-        num_electrons (int): Number of electrons to generate velocities for.
-        temperature (float): Temperature in Kelvin.
 
     Returns:
         cupy.ndarray: An array of shape (num_electrons, 3) containing random
@@ -384,7 +380,7 @@ def generate_thermal_velocities():
     """
 
     # Calculate the standard deviation of the speed distribution
-    sigma = cp.sqrt(kb * boltz_temp / electron_mass)
+    sigma = cp.sqrt(Boltzmann * boltz_temp / electron_mass)
 
     # Generate random speeds from a Maxwell-Boltzmann distribution
     # Use the fact that the Maxwell-Boltzmann distribution for speeds in one dimension
