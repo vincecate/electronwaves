@@ -143,6 +143,7 @@ effective_electron_mass = electron_mass   #  default is the same
 # Initial electron speed 2,178,278 m/s
 # electron_speed= 2178278  
 electron_speed= 2188058
+electrons_per_coulomb = 1.0 / abs(elementary_charge)
 
 
 # Atom spacing in meters
@@ -628,7 +629,7 @@ def calculate_plots():
     electron_density = electron_counts / wire_slice_volume
 
     # Calculate current in each segment
-    amps = electron_density * average_xvelocities * electron_charge * dt
+    amps = electron_density * average_xvelocities * coloumbs_per_electron
 
     return electron_counts.get(), average_xvelocities.get(), amps.get(), average_speeds.get() 
 
@@ -1040,7 +1041,7 @@ def calculate_forces_cuda():
 #  randomly pick enough to move to the first part of the wire.
 #  We can initialize the velocity after the move to zero.
 def apply_driving_current():
-    global electron_positions, electron_velocities, electron_is_active, num_electrons, electron_charge
+    global electron_positions, electron_velocities, electron_is_active, num_electrons, electron_charge, dt
 
     # Constants
     volume_of_wire = gridx * gridy * gridz * (initial_spacing ** 3)  # Volume of the wire
@@ -1048,8 +1049,8 @@ def apply_driving_current():
     current_density = driving_current / (gridy * gridz * (initial_spacing ** 2))  # Current density (A/m^2)
 
     # The required change in the number of electrons based on the current and time interval
-    required_charge_transfer = driving_current * dt  # Total charge to transfer
-    num_electrons_to_move = int(cp.floor(required_charge_transfer / electron_charge))
+    coulombs_per_dt = driving_current * dt                               # Amp is C/second, so times dt gives units of coulombs 
+    electrons_per_dt = int(cp.floor(coulombs_per_dt * electrons_per_coulomb ))  # want int number of electrons to move
 
     # Identify electrons in the last part of the wire
     right_end_electrons = electron_positions[:, 0] >= ((gridx -3) * initial_spacing)
@@ -1057,9 +1058,9 @@ def apply_driving_current():
     
     # Check if there are any electrons to move
     if indices_of_electrons_to_move.size > 0:
-        if len(indices_of_electrons_to_move) > num_electrons_to_move:
+        if len(indices_of_electrons_to_move) > electrons_per_dt:
             # If more electrons are available than needed, randomly select a subset
-            chosen_indices = cp.random.choice(indices_of_electrons_to_move, size=num_electrons_to_move, replace=False)
+            chosen_indices = cp.random.choice(indices_of_electrons_to_move, size=electrons_per_dt, replace=False)
         else:
             # If fewer electrons are available than needed, move all of them
             chosen_indices = indices_of_electrons_to_move
