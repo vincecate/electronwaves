@@ -282,7 +282,7 @@ def load_arrays():
 # dt is length of simulation timestep in seconds
 def latice_collisions():
     global electron_positions, electron_velocities
-    global num_electrons, boltz_temp, Boltzman, electron_mass, mean_free_path, dt
+    global num_electrons, boltz_temp, Boltzmann, electron_mass, mean_free_path, dt
 
     # Calculate velocities magnitude
     velocities_magnitude = cp.sqrt(cp.sum(electron_velocities ** 2, axis=1))
@@ -295,6 +295,10 @@ def latice_collisions():
     random_numbers = cp.random.rand(num_electrons)
     collide = random_numbers < adjusted_probabilities
 
+
+    # Count the number of collisions
+    num_collisions = cp.sum(collide)
+
     # Update velocities after collision using a simple model
     # For a more accurate model, you might simulate the actual direction and magnitude based on boltz_temp
     thermal_velocity = cp.sqrt(2 * Boltzmann * boltz_temp / electron_mass)
@@ -302,6 +306,7 @@ def latice_collisions():
     direction /= cp.linalg.norm(direction, axis=1)[:, cp.newaxis]  # Normalize to get direction vectors
     electron_velocities[collide] = direction[collide] * thermal_velocity
 
+    print(f"latice_collisions did {num_collisions} collisions ")
 
 # Note  - CUDA kerel has made a list of collision_pairs that is collision_count long
 # electron_positions = cp.zeros((num_electrons, 3))
@@ -1264,11 +1269,11 @@ def main():
             apply_driving_current()
 
         if (collision_on):                        # see if any new positons violate collision limit if on
-            print("resolve collisions", t)
+            print("resolve collisions")
             resolve_collisions()
 
         if (latice_collisions_on):                # does not change electron positions just velocity
-            print("lastice_collisons")
+            print("latice_collisions")
             latice_collisions()
 
         cp.cuda.Stream.null.synchronize()         # free memory on the GPU
