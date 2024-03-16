@@ -134,7 +134,7 @@ pulse_velocity = sim_settings.get('pulse_velocity', 0)   # Have electrons in pul
 pulse_offset = sim_settings.get('pulse_offset', 0)   # X value offset for pulse 
 force_velocity_adjust = sim_settings.get('force_velocity_adjust', True)   # X value offset for pulse 
 collision_distance = sim_settings.get('collision_distance', 1e-10)  # Less than this simulate a collision
-collision_on = sim_settings.get('collision_on', True)  # Simulate collisions 
+ee_collisions_on = sim_settings.get('ee_collisions_on', True)  # Simulate electron electon collisions 
 collision_max = sim_settings.get('collision_max', 1000) # Maximum number of collisions per time slice
 driving_current = sim_settings.get('driving_current', 0.0) # Amps applied to wire 
 driving_voltage = sim_settings.get('driving_voltage', 0.0) # Maximum number of collisions per time slice
@@ -176,7 +176,7 @@ dt = speedup*proprange*initial_spacing/c/num_steps  # would like total simulatio
 
 
 # Make string of some settings to put on output graph 
-sim_settings = f"simnum {simnum} gridx {gridx} gridy {gridy} gridz {gridz} speedup {speedup} lorentz {use_lorentz}  \n Spacing: {initial_spacing:.8e} Pulse Width {pulse_width} Steps: {num_steps} dt: {dt:.8e} iv:{initialize_velocities} st:{search_type}"
+sim_settings = f"simnum {simnum} gridx {gridx} gridy {gridy} gridz {gridz} speedup {speedup} lorentz {use_lorentz} ee-col {collisions_on} latice {latice_collisions_on} \n Spacing: {initial_spacing:.8e} Pulse Width {pulse_width} Steps: {num_steps} dt: {dt:.8e} iv:{initialize_velocities} st:{search_type}"
 
 def GPUMem():
     # Get total and free memory in bytes
@@ -311,7 +311,7 @@ def latice_collisions():
 # Note  - CUDA kerel has made a list of collision_pairs that is collision_count long
 # electron_positions = cp.zeros((num_electrons, 3))
 # electron_velocities = cp.zeros((num_electrons, 3))
-def resolve_collisions():
+def resolve_ee_collisions():
     global electron_positions, electron_velocities, collision_count, collision_pairs
 
     # Read the number of collisions detected
@@ -320,7 +320,7 @@ def resolve_collisions():
     # Read the collision pairs, and slice based on the actual number of collisions
     collision_pairs_np = collision_pairs[:num_collisions].get()
 
-    print(f"Number of collisions when double counting: {num_collisions}")
+    print(f"Number of e-e collisions when double counting: {num_collisions}")
     #print("Collision pairs (electron indexes):")
     #print(collision_pairs_np)
 
@@ -1094,7 +1094,7 @@ def apply_driving_current():
     electrons_per_dt = int(cp.floor(coulombs_per_dt * electrons_per_coulomb ))  # want int number of electrons to move
 
     # Identify electrons in the last part of the wire
-    right_end_electrons = electron_positions[:, 0] >= ((0.99*gridx) * initial_spacing)
+    right_end_electrons = electron_positions[:, 0] >= ((0.95*gridx) * initial_spacing)
     indices_of_electrons_to_move = cp.where(right_end_electrons)[0]
     
     # Check if there are any electrons to move
@@ -1268,9 +1268,9 @@ def main():
             print("apply_driving_current")        # do this before checking for collisions
             apply_driving_current()
 
-        if (collision_on):                        # see if any new positons violate collision limit if on
-            print("resolve collisions")
-            resolve_collisions()
+        if (ee_collisions_on):                        # see if any new positons violate collision limit if on
+            print("resolve_ee_collisions")
+            resolve_ee_collisions()
 
         if (latice_collisions_on):                # does not change electron positions just velocity
             print("latice_collisions")
