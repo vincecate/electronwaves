@@ -144,7 +144,7 @@ effective_electron_mass = electron_mass   #  default is the same
 # electron_speed= 2178278  
 electron_speed= 2188058
 electrons_per_coulomb = 1.0 / abs(elementary_charge)
-
+coulombs_per_electron = abs(elementary_charge)
 
 # Atom spacing in meters
 hydrogen_spacing = 3.34e-9  # 3.34 nanometers between atoms in hydrogen gas
@@ -628,8 +628,8 @@ def calculate_plots():
     wire_slice_volume = initial_spacing * (gridy * initial_spacing) * (gridz * initial_spacing)
     electron_density = electron_counts / wire_slice_volume
 
-    # Calculate current in each segment
-    amps = electron_density * average_xvelocities * coloumbs_per_electron
+    # Calculate current passing through area of slice in wire 
+    amps = electron_density * average_xvelocities * electron_charge    # coulombs_per_electron = abs(electron_charge) but sign useful
 
     return electron_counts.get(), average_xvelocities.get(), amps.get(), average_speeds.get() 
 

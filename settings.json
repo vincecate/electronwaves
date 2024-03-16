@@ -341,7 +341,7 @@
     "gridx": 500,
     "gridy": 20,
     "gridz": 20,
-    "speedup": 1,
+    "speedup": 20,
     "initialize_velocities": true,
     "boltz_temp": 300.0,
     "wire_steps":  1,
