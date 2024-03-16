@@ -67,7 +67,7 @@ import cupy as cp
 import numpy as np   # numpy as np for CPU and now just for visualization 
 import matplotlib.pyplot as plt
 from matplotlib.ticker import ScalarFormatter
-from scipy.constants import e, epsilon_0, electron_mass, elementary_charge, c    
+from scipy.constants import e, epsilon_0, electron_mass, elementary_charge, c, Boltzmann    
 speed_of_light = c
 electron_charge=elementary_charge
 coulombs_constant = 8.9875517873681764e9  # Coulomb's constant
@@ -138,6 +138,8 @@ collision_on = sim_settings.get('collision_on', True)  # Simulate collisions
 collision_max = sim_settings.get('collision_max', 1000) # Maximum number of collisions per time slice
 driving_current = sim_settings.get('driving_current', 0.0) # Amps applied to wire 
 driving_voltage = sim_settings.get('driving_voltage', 0.0) # Maximum number of collisions per time slice
+latice_collisions_on = sim_settings.get('latice_collisions_on', True) # 
+mean_free_path = sim_settings.get('mean_free_path', 4e-8) # 
 
 effective_electron_mass = electron_mass   #  default is the same
 # Initial electron speed 2,178,278 m/s
@@ -269,6 +271,37 @@ def load_arrays():
 
 
 
+# Note  - boltz_temp has temp in K like 300
+# Main array globals were define as:
+# electron_positions = cp.zeros((num_electrons, 3))
+# electron_velocities = cp.zeros((num_electrons, 3))
+# Other globals used here are all constants defined at start
+# Want probability of collision to depend on velocity and mean_free_path
+#   velocity after collision just on boltz_temp
+# Arrays are in CuPy so want to do vector calculations
+# dt is length of simulation timestep in seconds
+def latice_collisions():
+    global electron_positions, electron_velocities
+    global num_electrons, boltz_temp, Boltzman, electron_mass, mean_free_path, dt
+
+    # Calculate velocities magnitude
+    velocities_magnitude = cp.sqrt(cp.sum(electron_velocities ** 2, axis=1))
+
+    # Adjusted collision probabilities incorporating dt
+    mean_free_time = mean_free_path / velocities_magnitude
+    adjusted_probabilities = 1 - cp.exp(-dt / mean_free_time)
+
+    # Decide which electrons collide
+    random_numbers = cp.random.rand(num_electrons)
+    collide = random_numbers < adjusted_probabilities
+
+    # Update velocities after collision using a simple model
+    # For a more accurate model, you might simulate the actual direction and magnitude based on boltz_temp
+    thermal_velocity = cp.sqrt(2 * Boltzman * boltz_temp / electron_mass)
+    direction = cp.random.normal(size=(num_electrons, 3))
+    direction /= cp.linalg.norm(direction, axis=1)[:, cp.newaxis]  # Normalize to get direction vectors
+    electron_velocities[collide] = direction[collide] * thermal_velocity
+
 
 # Note  - CUDA kerel has made a list of collision_pairs that is collision_count long
 # electron_positions = cp.zeros((num_electrons, 3))
@@ -335,7 +368,7 @@ def resolve_collisions():
 
 
 def generate_thermal_velocities():
-    global num_electrons, boltz_temp
+    global num_electrons, boltz_temp, Boltzman, electron_mass
     """
     Generates random thermal velocity vectors for a given number of electrons
     at a specified temperature. The Maxwell-Boltzmann distribution is used to
@@ -349,9 +382,6 @@ def generate_thermal_velocities():
         cupy.ndarray: An array of shape (num_electrons, 3) containing random
                       velocity vectors for each electron.
     """
-
-    kb = 1.380649e-23  # Boltzmann constant, in J/K
-    electron_mass = 9.1093837e-31  # Electron mass, in kg
 
     # Calculate the standard deviation of the speed distribution
     sigma = cp.sqrt(kb * boltz_temp / electron_mass)
@@ -620,23 +650,26 @@ def calculate_plots():
     # Avoid division by zero
     electron_counts_nonzero = cp.where(electron_counts == 0, 1, electron_counts)
     
-    # Calculate average velocities (drift_velocity)  and speeds
+    # Calculate average velocities (drift_velocity)  and average speeds
     drift_velocities = xvelocity_sums / electron_counts_nonzero
     average_speeds = speed_sums / electron_counts_nonzero
-
-    # Calculate wire slice volume and electron density
-    wire_slice_volume = initial_spacing * (gridy * initial_spacing) * (gridz * initial_spacing)
-    electron_density = electron_counts / wire_slice_volume
-
-    # Calculate current density (A/m^2)
-    current_density = electron_density * drift_velocities * electron_charge   # coulombs_per_electron=abs(electron_charge) but like sign
 
     # Calculate cross-sectional area of the wire slice (m^2) we want to measure current through
     cross_sectional_area = (gridy * initial_spacing) * (gridz * initial_spacing)
 
+    # Calculate wire slice volume for one unit of wires length 
+    wire_slice_volume = initial_spacing * cross_sectional_area
+
+    # Electron density in electrons/m^3
+    electron_density = electron_counts / wire_slice_volume
+
+    # Calculate current density (A/m^2)
+    current_density = electron_density * drift_velocities * coulombs_per_electron     # velocity has sign for direction
+
     # Calculate current (A) by multiplying current density with cross-sectional area
     amps = current_density * cross_sectional_area
 
+    print(f"drift-100 {drift_velocities[100]} density-100 {electron_counts[100]} amps-100 {amps[100]}")
 
     return electron_counts.get(), drift_velocities.get(), amps.get(), average_speeds.get()   # numpy so can pass to futures
 
@@ -1237,6 +1270,10 @@ def main():
         if (collision_on):                        # see if any new positons violate collision limit if on
             print("resolve collisions", t)
             resolve_collisions()
+
+        if (latice_collisions_on):                # does not change electron positions just velocity
+            print("lastice_collisons")
+            latice_collisions()
 
         cp.cuda.Stream.null.synchronize()         # free memory on the GPU
         elapsed_time = time.time() - start_time           # Calculate elapsed time
