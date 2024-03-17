@@ -138,6 +138,7 @@ ee_collisions_on = sim_settings.get('ee_collisions_on', True)  # Simulate electr
 collision_max = sim_settings.get('collision_max', 1000) # Maximum number of collisions per time slice
 driving_current = sim_settings.get('driving_current', 0.0) # Amps applied to wire 
 driving_voltage = sim_settings.get('driving_voltage', 0.0) # Maximum number of collisions per time slice
+driving_end_perc = sim_settings.get('driving_end_perc', 5) # 5 percent of both ends for taking and adding elect
 latice_collisions_on = sim_settings.get('latice_collisions_on', True) # 
 mean_free_path = sim_settings.get('mean_free_path', 4e-8) # 
 
@@ -176,7 +177,7 @@ dt = speedup*proprange*initial_spacing/c/num_steps  # would like total simulatio
 
 
 # Make string of some settings to put on output graph 
-sim_settings = f"simnum {simnum} gridx {gridx} gridy {gridy} gridz {gridz} speedup {speedup} lorentz {use_lorentz} ee-col {collisions_on} latice {latice_collisions_on} \n Spacing: {initial_spacing:.8e} Pulse Width {pulse_width} Steps: {num_steps} dt: {dt:.8e} iv:{initialize_velocities} st:{search_type}"
+sim_settings = f"simnum {simnum} gridx {gridx} gridy {gridy} gridz {gridz} speedup {speedup} lorentz {use_lorentz} ee-col {ee_collisions_on} latice {latice_collisions_on} \n Spacing: {initial_spacing:.8e} Pulse Width {pulse_width} Steps: {num_steps} dt: {dt:.8e} iv:{initialize_velocities} st:{search_type}"
 
 def GPUMem():
     # Get total and free memory in bytes
@@ -655,20 +656,26 @@ def calculate_plots():
     drift_velocities = xvelocity_sums / electron_counts_nonzero
     average_speeds = speed_sums / electron_counts_nonzero
 
+    # number of electrons in volume times fraction of volume that will go over the edge
+    electrons_passing_per_dt =  electron_counts_nonzero * drift_velocity * dt / initial_spacing 
+
+    # I = N/time * Q
+    amps = electrons_passing/dt * coulombs_per_electron
+
     # Calculate cross-sectional area of the wire slice (m^2) we want to measure current through
-    cross_sectional_area = (gridy * initial_spacing) * (gridz * initial_spacing)
+    #cross_sectional_area = (gridy * initial_spacing) * (gridz * initial_spacing)
 
     # Calculate wire slice volume for one unit of wires length 
-    wire_slice_volume = initial_spacing * cross_sectional_area
+    #wire_slice_volume = initial_spacing * cross_sectional_area
 
     # Electron density in electrons/m^3
-    electron_density = electron_counts / wire_slice_volume
+    #electron_density = electron_counts / wire_slice_volume
 
     # Calculate current density (A/m^2)
-    current_density = electron_density * drift_velocities * coulombs_per_electron     # velocity has sign for direction
+    #current_density = electron_density * drift_velocities * coulombs_per_electron     # velocity has sign for direction
 
     # Calculate current (A) by multiplying current density with cross-sectional area
-    amps = current_density * cross_sectional_area
+    #amps = current_density * cross_sectional_area
 
     print(f"drift-100 {drift_velocities[100]} density-100 {electron_counts[100]} amps-100 {amps[100]}")
 
@@ -1061,7 +1068,7 @@ def calculate_forces_cuda():
         end_gpu.record()
         end_gpu.synchronize()
         t_gpu = cp.cuda.get_elapsed_time(start_gpu, end_gpu)
-        print("Calculate_forces duration:", t_gpu)
+        print(f"Calculate_forces duration {t_gpu/1000} seconds")
 
     except cp.cuda.CUDARuntimeError as e:
         print(f"CUDA Error: {e}")
@@ -1083,6 +1090,7 @@ def calculate_forces_cuda():
 #  We can initialize the velocity after the move to zero.
 def apply_driving_current():
     global electron_positions, electron_velocities, electron_is_active, num_electrons, electron_charge, dt
+    global driving_end_perc
 
     # Constants
     volume_of_wire = gridx * gridy * gridz * (initial_spacing ** 3)  # Volume of the wire
@@ -1094,7 +1102,9 @@ def apply_driving_current():
     electrons_per_dt = int(cp.floor(coulombs_per_dt * electrons_per_coulomb ))  # want int number of electrons to move
 
     # Identify electrons in the last part of the wire
-    right_end_electrons = electron_positions[:, 0] >= ((0.95*gridx) * initial_spacing)
+    end_in_meters = initial_spacing * gridx * (100.0 - driving_end_perc) / 100.0
+    start_in_meters = initial_spacing * gridx * driving_end_perc / 100.0
+    right_end_electrons = electron_positions[:, 0] >= end_in_meters 
     indices_of_electrons_to_move = cp.where(right_end_electrons)[0]
     
     # Check if there are any electrons to move
@@ -1108,7 +1118,7 @@ def apply_driving_current():
         
         # Move selected electrons to the start of the wire
         # Randomly select new positions between 0.1 * initial_spacing and initial_spacing for each electron
-        new_positions = cp.random.uniform(0.1 * initial_spacing, initial_spacing, size=len(chosen_indices))
+        new_positions = cp.random.uniform(0 , start_in_meters, size=len(chosen_indices))
         electron_positions[chosen_indices, 0] = new_positions  # Update positions with random values in the specified range
         electron_velocities[chosen_indices] = 0  # Reset their velocities to 0
 
@@ -1190,6 +1200,8 @@ def main():
     if (pulse_width > gridx/2):
         print("pulse_width has to be less than half of gridx")
         exit(-1)
+
+    print("Wire length in mm is ",gridx*initial_spacing*1000)
 
     checkgpu()
     GPUMem()
