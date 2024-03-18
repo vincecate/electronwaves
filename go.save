@@ -1,37 +1,22 @@
-#!/bin/bash
+#!/bin/bash  
 
 if [ -n "$1" ]; then
     simnum=$1
 else
-    exit -1
-fi
-
-if [ -n "$2" ]; then
-    plot=$2
-else
+    echo "must have simnum"
     exit -1
 fi
 
 echo $simnum
-echo $plot
 
-# Create the results directory if it does not exist
-mkdir -p results
-
-# Get the current date in YYYYMMDD format
-current_date=$(date +%Y%m%d)
-
-# Initialize the counter
-counter=1
-
-# Find the next available index for today's date
-while [[ -e "results/${current_date}.${simnum}.${plot}.${counter}.mp4" ]] || [[ -e "results/${current_date}.${counter}" ]]; do
-    ((counter++))
+for i in density velocity amps speed ; do
+    echo $i
+    rm simulation/*
+    rm cropped/*
+    sleep 1
+    mv $i/* simulation
+    sleep 1
+    ./makemovie.wire.nc.py
+    ./go.save1 $simnum $i
 done
-
-# Move the simulation_video.mp4 to the results directory with the new name
-videoname="results/${current_date}.${simnum}.${plot}.${counter}.mp4"
-mv simulation_video.mp4 "$videoname"
-
-echo "Files moved to ${videoname}"
 

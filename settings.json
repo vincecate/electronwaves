@@ -41,44 +41,65 @@
     "num_steps": 2000
   },
   "5": {
-    "gridx": 80,
-    "gridy": 35,
-    "gridz": 35,
-    "speedup": 100,
-    "pulse_width": 35,
-    "num_steps": 5
+    "gridx":80,
+    "gridy":35,
+    "gridz":35,
+    "speedup":20,
+    "pulse_width":35,
+    "pulse_density":2,
+    "pulse_velocity":1e7,
+    "num_steps":600,
+    "initialize_velocities":true,
+    "boltz_temp":300.0,
+    "wire_steps":1,
+    "search_type":2,
+    "use_lorentz":false,
+    "filename_save":"simulation.5.data",
+    "initialize_wave":false,
+    "past_positions_count":100,
+    "force_velocity_adjust":true,
+    "ee_collisions_on":true,
+    "latice_collisions_on":true,
+    "mean_free_path":4e-6, 
+    "collision_distance":2e-10,
+    "driving_current":0.1,
+    "driving_end_perc":10
   },
   "6": {
     "gridx": 100,
     "gridy": 40,
     "gridz": 40,
-    "speedup": 100,
+    "speedup": 20,
     "pulse_width": 40,
-    "num_steps": 2000
+    "pulse_density":2,
+    "num_steps": 400
   },
   "7": {
     "gridx": 120,
     "gridy": 50,
     "gridz": 50,
-    "speedup": 100,
+    "speedup": 20,
     "pulse_width": 50,
-    "num_steps": 2000
+    "pulse_density":2,
+    "num_steps": 350
   },
   "8": {
     "gridx": 140,
     "gridy": 60,
     "gridz": 60,
-    "speedup": 100,
+    "speedup": 20,
     "pulse_width": 60,
-    "num_steps": 2000
+    "pulse_density":2,
+    "num_steps": 350
   },
   "9": {
     "gridx": 160,
     "gridy": 70,
     "gridz": 70,
-    "speedup": 100,
+    "speedup": 10,
     "pulse_width": 70,
-    "num_steps": 2000
+    "pulse_density":2,
+    "num_steps": 300
   },
   "10": {
     "gridx": 180,
@@ -86,7 +107,8 @@
     "gridz": 80,
     "speedup": 100,
     "pulse_width": 80,
-    "num_steps": 2000
+    "pulse_density":2,
+    "num_steps": 250
   },
   "11": {
     "gridx": 200,
@@ -94,7 +116,8 @@
     "gridz": 100,
     "speedup": 100,
     "pulse_width": 90,
-    "num_steps": 2000
+    "pulse_density":2,
+    "num_steps": 200
   },
   "12": {
     "gridx": 200,
@@ -342,7 +365,7 @@
     "gridy": 20,
     "gridz": 20,
     "speedup": 2,
-    "initialize_velocities": true,
+    "initialize_velocities":true,
     "boltz_temp": 300.0,
     "wire_steps":  1,
     "search_type": 2,
@@ -355,9 +378,12 @@
     "ee_collisions_on":true,
     "latice_collisions_on":true,
     "collision_distance":2e-10,
-    "driving_current":0.01,
+    "mean_free_path":4e-6, 
+    "driving_current":0.1,
     "driving_end_perc":10,
     "num_steps": 2000
-  }
+  } 
 }
+
+	
 

@@ -129,7 +129,7 @@ boltz_temp = sim_settings.get('boltz_temp', 300.0)        # Boltzman temperature
 wire_steps = sim_settings.get('wire_steps', 1)            # How many steps between wire plot outputs 
 display_steps = sim_settings.get('display_steps', 8000)   # every so many simulation steps we call the visualize code
 past_positions_count = sim_settings.get('past_positions_count', 100)   # how many past positions history we keep for each electron
-initialize_wave = sim_settings.get('initialize_wave', True)   # Try to initialize in a wave pattern so not in rush to move 
+initialize_wave = sim_settings.get('initialize_wave', False)   # Try to initialize in a wave pattern so not in rush to move 
 pulse_velocity = sim_settings.get('pulse_velocity', 0)   # Have electrons in pulse area moving
 pulse_offset = sim_settings.get('pulse_offset', 0)   # X value offset for pulse 
 force_velocity_adjust = sim_settings.get('force_velocity_adjust', True)   # X value offset for pulse 
@@ -137,10 +137,10 @@ collision_distance = sim_settings.get('collision_distance', 1e-10)  # Less than 
 ee_collisions_on = sim_settings.get('ee_collisions_on', True)  # Simulate electron electon collisions 
 collision_max = sim_settings.get('collision_max', 1000) # Maximum number of collisions per time slice
 driving_current = sim_settings.get('driving_current', 0.0) # Amps applied to wire 
-driving_voltage = sim_settings.get('driving_voltage', 0.0) # Maximum number of collisions per time slice
+driving_voltage = sim_settings.get('driving_voltage', 0.0) # Don't have this yet but idea is to keep certain number of electrons in slice
 driving_end_perc = sim_settings.get('driving_end_perc', 5) # 5 percent of both ends for taking and adding elect
 latice_collisions_on = sim_settings.get('latice_collisions_on', True) # 
-mean_free_path = sim_settings.get('mean_free_path', 4e-8) # 
+mean_free_path = sim_settings.get('mean_free_path', 4e-8) #  Seems for drif velocity 4e-8 works but for Fermi velocity may not be right
 
 effective_electron_mass = electron_mass   #  default is the same
 # Initial electron speed 2,178,278 m/s
@@ -156,7 +156,6 @@ initial_spacing_gemini = 2.27e-10  # Gemini Ultra number for free electron spaci
 initial_spacing = copper_spacing*47  # 47^3 is about 100,000 and 1 free electron for every 100,000 copper atoms
 initial_radius = 5.29e-11 #  initial electron radius for hydrogen atom - got at least two times
 pulse_sinwave = False  # True if pulse should be sin wave
-pulsehalf=False    # True to only pulse half the plane
 
 
 # bounds format is  ((minx,  maxx) , (miny, maxy), (minz, maxz))
@@ -177,7 +176,7 @@ dt = speedup*proprange*initial_spacing/c/num_steps  # would like total simulatio
 
 
 # Make string of some settings to put on output graph 
-sim_settings = f"simnum {simnum} gridx {gridx} gridy {gridy} gridz {gridz} speedup {speedup} lorentz {use_lorentz} ee-col {ee_collisions_on} latice {latice_collisions_on} \n Spacing: {initial_spacing:.8e} Pulse Width {pulse_width} Steps: {num_steps} dt: {dt:.8e} iv:{initialize_velocities} st:{search_type}"
+sim_settings = f"simnum {simnum} gridx {gridx} gridy {gridy} gridz {gridz} speedup {speedup} lorentz {use_lorentz} ee-col {ee_collisions_on} latice {latice_collisions_on} \n driving_c {driving_current:.4e} Spacing: {initial_spacing:.4e} PWidth {pulse_width} PDensity {pulse_density} PVeloc {pulse_velocity} Steps: {num_steps} dt: {dt:.4e} iv:{initialize_velocities} st:{search_type}"
 
 def GPUMem():
     # Get total and free memory in bytes
@@ -657,10 +656,10 @@ def calculate_plots():
     average_speeds = speed_sums / electron_counts_nonzero
 
     # number of electrons in volume times fraction of volume that will go over the edge
-    electrons_passing_per_dt =  electron_counts_nonzero * drift_velocity * dt / initial_spacing 
+    electrons_passing_per_dt =  electron_counts_nonzero * drift_velocities * dt / initial_spacing 
 
-    # I = N/time * Q
-    amps = electrons_passing/dt * coulombs_per_electron
+    # I = Q * N/time 
+    amps = coulombs_per_electron * electrons_passing_per_dt/dt 
 
     # Calculate cross-sectional area of the wire slice (m^2) we want to measure current through
     #cross_sectional_area = (gridy * initial_spacing) * (gridz * initial_spacing)
@@ -677,7 +676,7 @@ def calculate_plots():
     # Calculate current (A) by multiplying current density with cross-sectional area
     #amps = current_density * cross_sectional_area
 
-    print(f"drift-100 {drift_velocities[100]} density-100 {electron_counts[100]} amps-100 {amps[100]}")
+    print(f"drift-50 {drift_velocities[50]} density-50 {electron_counts[50]} amps-50 {amps[50]}")
 
     return electron_counts.get(), drift_velocities.get(), amps.get(), average_speeds.get()   # numpy so can pass to futures
 
