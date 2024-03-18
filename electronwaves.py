@@ -627,19 +627,32 @@ def calculate_wire_offset(epositions):
 
 
 
-
+# electron_positions = cp.zeros((num_electrons, 3))
+# electron_velocities = cp.zeros((num_electrons, 3))
+# past_positions_count = 100
+# electron_past_positions = cp.zeros((num_electrons, past_positions_count, 3))   # keeping past positions with current at 0, previos 1, etc
 #  returns  (density, velocity, amps, speed )    - for plotting to files
+#  For amps we use past_segment_indices to could up electrons moved right or left
+#   electron_past_positions[0] is current position and [1] is previous time slice position, etc.
+#    Each slice of the wire is initial_spacing wide.
 def calculate_plots():
     global electron_positions, electron_velocities, gridx, gridy, gridz, initial_spacing, electron_charge, dt
 
     # Get x positions and velocities from the 2D arrays
     x_positions = electron_positions[:, 0]
+    past_x_positions = electron_past_positions[:,1,0]     #  past[0] is current and past[1] is one time slice back
+
+    print(f"plots x-12 {x_positions[12]} past-x-12 {past_x_positions[12]}")
+
     x_velocities = electron_velocities[:, 0]
 
-    # Convert positions to segment indices based on the total length of the wire and number of slices
+    # Convert current positions and past positions to segment indices based on the total length of the wire and number of slices
     segment_indices = cp.floor(x_positions / initial_spacing).astype(cp.int32)
+    past_segment_indices = cp.floor(past_x_positions / initial_spacing).astype(cp.int32)
+
     # Ensure segment indices are within bounds
     segment_indices = cp.clip(segment_indices, 0, gridx - 1)
+    past_segment_indices = cp.clip(past_segment_indices, 0, gridx - 1)
 
     # Calculate speeds (magnitude of velocity) for each electron
     speeds = cp.sqrt(cp.sum(electron_velocities**2, axis=1))
@@ -650,35 +663,21 @@ def calculate_plots():
     electron_counts = cp.bincount(segment_indices, minlength=gridx)
     # Avoid division by zero
     electron_counts_nonzero = cp.where(electron_counts == 0, 1, electron_counts)
-    
+
     # Calculate average velocities (drift_velocity)  and average speeds
     drift_velocities = xvelocity_sums / electron_counts_nonzero
     average_speeds = speed_sums / electron_counts_nonzero
 
-    # number of electrons in volume times fraction of volume that will go over the edge
-    electrons_passing_per_dt =  electron_counts_nonzero * drift_velocities * dt / initial_spacing 
+    # Calculate the movement direction of electrons between segments
+    moved_directions = cp.sign(segment_indices - past_segment_indices)
+    moved_counts = cp.bincount(segment_indices, weights=moved_directions, minlength=gridx)
 
-    # I = Q * N/time 
-    amps = coulombs_per_electron * electrons_passing_per_dt/dt 
-
-    # Calculate cross-sectional area of the wire slice (m^2) we want to measure current through
-    #cross_sectional_area = (gridy * initial_spacing) * (gridz * initial_spacing)
-
-    # Calculate wire slice volume for one unit of wires length 
-    #wire_slice_volume = initial_spacing * cross_sectional_area
-
-    # Electron density in electrons/m^3
-    #electron_density = electron_counts / wire_slice_volume
-
-    # Calculate current density (A/m^2)
-    #current_density = electron_density * drift_velocities * coulombs_per_electron     # velocity has sign for direction
-
-    # Calculate current (A) by multiplying current density with cross-sectional area
-    #amps = current_density * cross_sectional_area
-
+    # Calculate the current flowing through each segment
+    amps = moved_counts * coulombs_per_electron / dt
     print(f"drift-50 {drift_velocities[50]} density-50 {electron_counts[50]} amps-50 {amps[50]}")
 
-    return electron_counts.get(), drift_velocities.get(), amps.get(), average_speeds.get()   # numpy so can pass to futures
+    return electron_counts.get(), drift_velocities.get(), amps.get(), average_speeds.get()
+
 
 
 
@@ -1180,8 +1179,8 @@ def update_pv(dt):
         electron_past_velocities[:, i, :] = electron_past_velocities[:, i - 1, :]
 
     # Step 2: Copy the current electron_positions into the first spot of electron_past_positions and past_velocities
-        electron_past_positions[:, 0, :] = electron_positions
-        electron_past_velocities[:, 0, :] = electron_velocities
+    electron_past_positions[:, 0, :] = electron_positions
+    electron_past_velocities[:, 0, :] = electron_velocities
 
 
     # Diagnostic output to monitor maximum position and velocity magnitudes
