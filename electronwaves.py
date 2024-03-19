@@ -176,7 +176,7 @@ dt = speedup*proprange*initial_spacing/c/num_steps  # would like total simulatio
 
 
 # Make string of some settings to put on output graph 
-sim_settings = f"simnum {simnum} gridx {gridx} gridy {gridy} gridz {gridz} speedup {speedup} lorentz {use_lorentz} ee-col {ee_collisions_on} latice {latice_collisions_on} \n driving_c {driving_current:.4e} Spacing: {initial_spacing:.4e} PWidth {pulse_width} PDensity {pulse_density} PVeloc {pulse_velocity} Steps: {num_steps} dt: {dt:.4e} iv:{initialize_velocities} st:{search_type}"
+sim_settings = f"simnum {simnum} gridx {gridx} gridy {gridy} gridz {gridz} speedup {speedup} lorentz {use_lorentz} ee-col {ee_collisions_on} \n latice {latice_collisions_on} mfp {mean_free_path:.4e} driving_c {driving_current:.4e} Spacing: {initial_spacing:.4e} PWidth {pulse_width} PDensity {pulse_density} PVeloc {pulse_velocity} Steps: {num_steps} dt: {dt:.4e} iv:{initialize_velocities} st:{search_type}"
 
 def GPUMem():
     # Get total and free memory in bytes
@@ -436,10 +436,6 @@ def initialize_electrons_sine_wave():
         electron_velocities[mask, 0] = pulse_velocity   # Apply the mask to set the x velocities
 
     
-    # Initialize past positions array
-    electron_past_positions = cp.tile(electron_positions[:, None, :], (1, past_positions_count, 1))
-
-    electron_is_active.fill(True)                       # for now all electrons are active
 
 
 # When done with initialize_electrons these two arrays should have this shape
@@ -477,8 +473,9 @@ def initialize_electrons():
     else:
         electron_velocities = cp.zeros((num_electrons, 3))
 
-    load_arrays()   #   we are not saving past_positions to file so far - if no file it  will not change arrays
-    
+   
+
+def initialize_past():
     # Set all past positions to the current positions
     # We use broadcasting to replicate the current positions across the second dimension of electron_past_positions
     # electron_past_positions[:] = electron_positions[:, None, :]
@@ -1208,6 +1205,9 @@ def main():
     else:
         initialize_electrons()
 
+    load_arrays()        #   we are not saving past_positions to file so far - if no filename_load "none" it  will not change arrays
+    initialize_past()    #  past_electron_positions and past_electron_velocities
+    electron_is_active.fill(True)                       # for now all electrons are active
 
     os.makedirs('simulation', exist_ok=True) # Ensure the simulation directory exists
     os.makedirs('velocity', exist_ok=True) # Ensure the simulation directory exists
