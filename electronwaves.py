@@ -141,6 +141,7 @@ driving_voltage = sim_settings.get('driving_voltage', 0.0) # Don't have this yet
 driving_end_perc = sim_settings.get('driving_end_perc', 5) # 5 percent of both ends for taking and adding elect
 latice_collisions_on = sim_settings.get('latice_collisions_on', True) # 
 mean_free_path = sim_settings.get('mean_free_path', 4e-8) #  Seems for drif velocity 4e-8 works but for Fermi velocity may not be right
+amps_method = sim_settings.get('amps_method', 1) #  Used in calculate_plots:  1=use electron_past_positions  2=use drift velocity and counts
 
 effective_electron_mass = electron_mass   #  default is the same
 # Initial electron speed 2,178,278 m/s
@@ -665,17 +666,24 @@ def calculate_plots():
     drift_velocities = xvelocity_sums / electron_counts_nonzero
     average_speeds = speed_sums / electron_counts_nonzero
 
-    # Calculate the movement direction of electrons between segments
-    moved_directions = cp.sign(segment_indices - past_segment_indices)
-    moved_counts = cp.bincount(segment_indices, weights=moved_directions, minlength=gridx)
+    if (amps_method == 1):
+        # Calculate the movement direction of electrons between segments
+        moved_directions = cp.sign(segment_indices - past_segment_indices)
+        moved_counts = cp.bincount(segment_indices, weights=moved_directions, minlength=gridx)
 
-    # Calculate the current flowing through each segment
-    amps = moved_counts * coulombs_per_electron / dt
-    amps[0]=0
-    if (driving_current>0):            # if we are taking electrons from end the amps is no good
-        endzone = (int) gridx * (100-driving_end_perc)/100
-        for i in range(endzone,gridx):
-            amps[i]=0
+        # Calculate the current flowing through each segment
+        amps = moved_counts * coulombs_per_electron / dt
+        amps[0]=0                          # way we do it can't get value for 0
+        if driving_current > 0:  # if we are taking electrons from the end 
+            endzone = int(gridx * (100.0 - driving_end_perc) / 100.0)
+            for i in range(endzone, gridx):
+                amps[i] = 0             #  then the amps at the end is no good
+    else:   # amps_method == 2
+        # double fraction_moved = drift_velocities * dt / initial_spacing    # These two lines logically what we are doing
+        # amps = fraction_moved * electron_counts * coulombs_per_electron/dt #   but since dt muliplied and then divided
+        double fraction_moved_per_dt = drift_velocities / initial_spacing           # These two lines have dt factored out 
+        amps = fraction_moved_per_dt * electron_counts * coulombs_per_electron      #   to run faster 
+        
 
     print(f"drift-50 {drift_velocities[50]} density-50 {electron_counts[50]} amps-50 {amps[50]}")
 
@@ -960,66 +968,70 @@ extern "C" __global__ void calculate_forces(const double3* electron_positions, c
                         collision_pairs[2 * collision_id] = i;           // record this electron
                         collision_pairs[2 * collision_id + 1] = j;       // and one we collide with
                     }
-                }
-                dist_sq = max(dist_sq, 1.0e-30); // avoid divide by zero
+                    force.x = 0.0;      // in collision we don't calc force as can be nan trouble
+                    force.y = 0.0;
+                    force.z = 0.0;
+                } else {
+                    dist_sq = max(dist_sq, 1.0e-30); // avoid divide by zero
 
-                double len_inv = rsqrt(dist_sq); // reciprocal square root
-                double3 normalized_r = make_double3(r.x * len_inv, r.y * len_inv, r.z * len_inv);
+                    double len_inv = rsqrt(dist_sq); // reciprocal square root
+                    double3 normalized_r = make_double3(r.x * len_inv, r.y * len_inv, r.z * len_inv);
 
-                double3 relative_velocity = make_double3(
-                    current_velocity.x - past_velocity.x,
-                    current_velocity.y - past_velocity.y,
-                    current_velocity.z - past_velocity.z);
+                    double3 relative_velocity = make_double3(
+                        current_velocity.x - past_velocity.x,
+                        current_velocity.y - past_velocity.y,
+                        current_velocity.z - past_velocity.z);
 
 
-                double relative_velocity_magnitude = sqrt(relative_velocity.x * relative_velocity.x +
+                    double relative_velocity_magnitude = sqrt(relative_velocity.x * relative_velocity.x +
                                            relative_velocity.y * relative_velocity.y +
                                            relative_velocity.z * relative_velocity.z + 1.0e-50); // Added epsilon to avoid division by zero
-                relative_velocity_magnitude = min(relative_velocity_magnitude, 0.99*speed_of_light);
+                    relative_velocity_magnitude = min(relative_velocity_magnitude, 0.99*speed_of_light);
 
-                double coulomb;
-                double dot_product = relative_velocity.x * normalized_r.x +
+                    double coulomb;
+                    double dot_product = relative_velocity.x * normalized_r.x +
                                      relative_velocity.y * normalized_r.y +
                                      relative_velocity.z * normalized_r.z;
 
-                // Ensure dot_product is scaled properly relative to the magnitudes and speed of light
-                // Adjustment_factor should be greater than 1 if coming together and less than 1 if moving away 
-                double adjustment_factor = 1.0; // Default to no adjustment
+                    // Ensure dot_product is scaled properly relative to the magnitudes and speed of light
+                    // Adjustment_factor should be greater than 1 if coming together and less than 1 if moving away 
+                    double adjustment_factor = 1.0; // Default to no adjustment
                
-                if (force_velocity_adjust){
-                    // Compute the magnitude of the relative velocity scaled by the speed of light
-                    double speed_ratio = relative_velocity_magnitude / speed_of_light;
-                    if (threadIdx.x == 0 && blockIdx.x == 0 && j == 8)     
-                        printf("speed_ratio =%.15lf\\n", speed_ratio);
+                    if (force_velocity_adjust){
+                        // Compute the magnitude of the relative velocity scaled by the speed of light
+                        double speed_ratio = relative_velocity_magnitude / speed_of_light;
+                        if (threadIdx.x == 0 && blockIdx.x == 0 && j == 8)     
+                            printf("speed_ratio =%.15lf\\n", speed_ratio);
 
-                    double speed_ratio_bounded = fmin(0.5, fabs(speed_ratio));  // so positive and bounded between 0 and 0.5
+                        double speed_ratio_bounded = fmin(0.5, fabs(speed_ratio));  // so positive and bounded between 0 and 0.5
 
-                    // Use the dot product to determine if the electrons are moving towards or away from each other
-                    bool movingTowardsEachOther = dot_product < 0;
+                        // Use the dot product to determine if the electrons are moving towards or away from each other
+                        bool movingTowardsEachOther = dot_product < 0;
 
-                    // Adjust the adjustment_factor based on the direction of movement
-                    // Increase when moving towards each other, decrease when moving away
-                    if (movingTowardsEachOther) {
-                        if (use_lorentz) {                   // Calculate the Lorentz factor (gamma)
-                            adjustment_factor = 1.0 / sqrt(1.0 - (relative_velocity_magnitude * relative_velocity_magnitude) / (speed_of_light * speed_of_light));
-                        } else{
-                            adjustment_factor = 1.0 + speed_ratio_bounded; // increases the force if moving towards each other
+                        // Adjust the adjustment_factor based on the direction of movement
+                        // Increase when moving towards each other, decrease when moving away
+                        if (movingTowardsEachOther) {
+                            if (use_lorentz) {                   // Calculate the Lorentz factor (gamma)
+                                adjustment_factor = 1.0 / sqrt(1.0 - (relative_velocity_magnitude * relative_velocity_magnitude) / (speed_of_light * speed_of_light));
+                            } else{
+                                adjustment_factor = 1.0 + speed_ratio_bounded; // increases the force if moving towards each other
+                            }
+                        } else {
+                            adjustment_factor = 1.0 - speed_ratio_bounded; // Reduce the force if moving away from each other
                         }
-                    } else {
-                        adjustment_factor = 1.0 - speed_ratio_bounded; // Reduce the force if moving away from each other
                     }
-                }
 
 
-                // adjustment_factor should now be between 0.5 or greater  
-                if (threadIdx.x == 0 && blockIdx.x == 0 && j == 8)     
-                    printf("adjustment_factor=%.15lf\\n", adjustment_factor);
+                    // adjustment_factor should now be between 0.5 or greater  
+                    if (threadIdx.x == 0 && blockIdx.x == 0 && j == 8)     
+                        printf("adjustment_factor=%.15lf\\n", adjustment_factor);
 
-                coulomb = adjustment_factor * coulombs_constant * electron_charge * electron_charge / dist_sq; // dist_sq is non zero
+                    coulomb = adjustment_factor * coulombs_constant * electron_charge * electron_charge / dist_sq; // dist_sq is non zero
 
-                force.x += coulomb * normalized_r.x;
-                force.y += coulomb * normalized_r.y;
-                force.z += coulomb * normalized_r.z;
+                    force.x += coulomb * normalized_r.x;
+                    force.y += coulomb * normalized_r.y;
+                    force.z += coulomb * normalized_r.z;
+                }  // if collision or else
             } // if less than num_electrons
         }    // for loop
         // Debug: Print the calculated force for the last few electrons
