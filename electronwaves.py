@@ -671,6 +671,12 @@ def calculate_plots():
 
     # Calculate the current flowing through each segment
     amps = moved_counts * coulombs_per_electron / dt
+    amps[0]=0
+    if (driving_current>0):            # if we are taking electrons from end the amps is no good
+        endzone = (int) gridx * (100-driving_end_perc)/100
+        for i in range(endzone,gridx):
+            amps[i]=0
+
     print(f"drift-50 {drift_velocities[50]} density-50 {electron_counts[50]} amps-50 {amps[50]}")
 
     return electron_counts.get(), drift_velocities.get(), amps.get(), average_speeds.get()
