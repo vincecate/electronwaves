@@ -1,0 +1,21 @@
+#!/bin/bash  
+
+if [ -n "$1" ]; then
+    simnum=$1
+else
+    simnum=1
+fi
+
+echo $simnum
+
+for i in density velocity amps speed ; do
+    echo $i
+    rm -f $i/*
+done
+
+./go $simnum
+
+./go.save $simnum 
+
+
+
