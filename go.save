@@ -9,6 +9,17 @@ fi
 
 echo $simnum
 
+# Get the current date in YYYYMMDD format
+current_date=$(date +%Y%m%d)
+
+# Initialize the counter
+counter=1
+
+# Find the next available index for today's date
+while [[ -e "results/${current_date}.${simnum}.${counter}.*" ]] ; do
+    ((counter++))
+done
+
 for i in density velocity amps speed ; do
     echo $i
     rm simulation/*
@@ -17,6 +28,14 @@ for i in density velocity amps speed ; do
     mv $i/* simulation
     sleep 1
     ./makemovie.wire.nc.py
-    ./go.save1 $simnum $i
+    # Move the simulation_video.mp4 to the results directory with the new name
+    videoname="results/${current_date}.${simnum}.${counter}.${plot}.mp4"
+    mv simulation_video.mp4 "$videoname"
+    echo "Files moved to ${videoname}"
 done
+
+
+
+
+
 

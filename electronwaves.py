@@ -177,7 +177,7 @@ dt = speedup*proprange*initial_spacing/c/num_steps  # would like total simulatio
 
 
 # Make string of some settings to put on output graph 
-sim_settings = f"simnum {simnum} gridx {gridx} gridy {gridy} gridz {gridz} speedup {speedup} lorentz {use_lorentz} ee-col {ee_collisions_on} \n latice {latice_collisions_on} mfp {mean_free_path:.4e} driving_c {driving_current:.4e} Spacing: {initial_spacing:.4e} PWidth {pulse_width} PDensity {pulse_density} PVeloc {pulse_velocity} Steps: {num_steps} dt: {dt:.4e} iv:{initialize_velocities} st:{search_type}"
+sim_settings = f"simnum {simnum} gridx {gridx} gridy {gridy} gridz {gridz} speedup {speedup} lorentz {use_lorentz} ee-col {ee_collisions_on} amps {amps_method} \n latice {latice_collisions_on} mfp {mean_free_path:.4e} driving_c {driving_current:.4e} Spacing: {initial_spacing:.4e} PWidth {pulse_width} PDensity {pulse_density} PVeloc {pulse_velocity} Steps: {num_steps} dt: {dt:.4e} iv:{initialize_velocities} st:{search_type}"
 
 def GPUMem():
     # Get total and free memory in bytes
@@ -313,7 +313,7 @@ def latice_collisions():
 # electron_positions = cp.zeros((num_electrons, 3))
 # electron_velocities = cp.zeros((num_electrons, 3))
 def resolve_ee_collisions():
-    global electron_positions, electron_velocities, collision_count, collision_pairs
+    global electron_positions, electron_velocities, collision_count, collision_pairs, collision_distance
 
     # Read the number of collisions detected
     num_collisions = collision_count.item()  # Convert to a Python scalar
@@ -321,29 +321,13 @@ def resolve_ee_collisions():
     # Read the collision pairs, and slice based on the actual number of collisions
     collision_pairs_np = collision_pairs[:num_collisions].get()
 
-    print(f"Number of e-e collisions when double counting: {num_collisions}")
-    #print("Collision pairs (electron indexes):")
-    #print(collision_pairs_np)
+    print(f"Number of e-e collisions: {num_collisions}")
+    print(collision_pairs_np)
 
-    # Ensure each pair is sorted
-    sorted_pairs = np.sort(collision_pairs_np, axis=1)
-
-    # Use np.unique to remove duplicates. Since np.unique works on 1D arrays,
-    # we view the 2D array as a structured array to treat each row as an element.
-    dtype = [('first', sorted_pairs.dtype), ('second', sorted_pairs.dtype)]
-    unique_pairs = np.unique(sorted_pairs.view(dtype))
-
-    # Convert back to a 2D array
-    unique_pairs = unique_pairs.view(sorted_pairs.dtype).reshape(-1, 2)
-
-    print("Unique collision pairs:")
-    print(unique_pairs)
-
-    # Assuming 'collision_distance' is defined elsewhere in your code
     desired_separation = 2 * collision_distance  # The target separation distance
 
-    for i in range(len(unique_pairs)):
-        e1, e2 = unique_pairs[i]
+    for i in range(len(collision_pairs_np)):
+        e1, e2 = collision_pairs_np[i]
         collision_vector = electron_positions[e1] - electron_positions[e2]
         norm_collision_vector = cp.linalg.norm(collision_vector)
         collision_vector_normalized = collision_vector / norm_collision_vector
@@ -681,7 +665,7 @@ def calculate_plots():
     else:   # amps_method == 2
         # double fraction_moved = drift_velocities * dt / initial_spacing    # These two lines logically what we are doing
         # amps = fraction_moved * electron_counts * coulombs_per_electron/dt #   but since dt muliplied and then divided
-        double fraction_moved_per_dt = drift_velocities / initial_spacing           # These two lines have dt factored out 
+        fraction_moved_per_dt = drift_velocities / initial_spacing           # These two lines have dt factored out 
         amps = fraction_moved_per_dt * electron_counts * coulombs_per_electron      #   to run faster 
         
 
@@ -963,10 +947,12 @@ extern "C" __global__ void calculate_forces(const double3* electron_positions, c
 
                 double dist_sq = r.x * r.x + r.y * r.y + r.z * r.z;
                 if (dist_sq < collision_distance * collision_distance) {
-                    int collision_id = atomicAdd(collision_count, 1);
-                    if (collision_id < collision_max) {
-                        collision_pairs[2 * collision_id] = i;           // record this electron
-                        collision_pairs[2 * collision_id + 1] = j;       // and one we collide with
+                    if (i < j){                     // only smaller of pair has to record collision
+                        int collision_id = atomicAdd(collision_count, 1);
+                        if (collision_id < collision_max) {
+                            collision_pairs[2 * collision_id] = i;           // record this electron
+                            collision_pairs[2 * collision_id + 1] = j;       // and one we collide with
+                        }
                     }
                     force.x = 0.0;      // in collision we don't calc force as can be nan trouble
                     force.y = 0.0;
@@ -1028,9 +1014,13 @@ extern "C" __global__ void calculate_forces(const double3* electron_positions, c
 
                     coulomb = adjustment_factor * coulombs_constant * electron_charge * electron_charge / dist_sq; // dist_sq is non zero
 
-                    force.x += coulomb * normalized_r.x;
-                    force.y += coulomb * normalized_r.y;
-                    force.z += coulomb * normalized_r.z;
+                    if (isnan(coulomb)){
+                        printf("found nan at i=%d   j=%d \\n",i,j);
+                    } else{
+                        force.x += coulomb * normalized_r.x;
+                        force.y += coulomb * normalized_r.y;
+                        force.z += coulomb * normalized_r.z;
+                    }
                 }  // if collision or else
             } // if less than num_electrons
         }    // for loop
