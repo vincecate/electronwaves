@@ -22,14 +22,14 @@ done
 
 for i in density velocity amps speed ; do
     echo $i
-    rm simulation/*
-    rm cropped/*
+    rm -f simulation/*
+    rm -f cropped/*
     sleep 1
-    mv $i/* simulation
+    cp $i/* simulation
     sleep 1
     ./makemovie.wire.nc.py
     # Move the simulation_video.mp4 to the results directory with the new name
-    videoname="results/${current_date}.${simnum}.${counter}.${plot}.mp4"
+    videoname="results/${current_date}.${simnum}.${counter}.${i}.mp4"
     mv simulation_video.mp4 "$videoname"
     echo "Files moved to ${videoname}"
 done
