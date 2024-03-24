@@ -1,5 +1,18 @@
 
-Some ideas:
-   1) Make electrons like springs attached to nucleus but start not moving except for ones in pulse - see if we get wave
-   2) Graph average Y position of planes of electrons to better detect waves
+The key idea of this project is that maybe what we call "magnetic fields" are just the 
+result of speed-of-light delayed moving electric fields.  With modern GPUs I think we 
+can simulate things well enough to test this idea.  We are not and will not use any direct
+"magnetic" concepts in the simulation.  If we can get "electro magnetic waves" without
+using magnetism, then "electon waves", the name of this project, seems like a good name.
+
+I have collected some chatbot opinions of this idea in the file chatbot.opinions.  
+
+Only when calculating forces between electrons do we have an N-squared problem.  This
+the most performance critical part.  This part is done in CUDA with the code in kernel.cu.   
+
+Much of the rest of the computaion is done using CuPy vectors in Python.  
+
+Some output/visualization code is done
+with Numpy vectors so they can run on CPU cores in the background.
+
 
