@@ -813,8 +813,9 @@ def calculate_forces_all():
     print("Max force magnitude:", max_force_magnitude)
 
 
-
+# Next two comment lines and one after Cuda string are so that github/Linguist can count this part as Cuda
 # CUDA code:
+# ```cuda
 kernel_code = '''
 #include <math_functions.h>
 
@@ -1038,6 +1039,7 @@ extern "C" __global__ void calculate_forces(const double3* electron_positions, c
 
 
 '''
+# ```
 
 # Load CUDA source and get kernel function
 module = cp.RawModule(code=kernel_code)
