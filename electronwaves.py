@@ -814,7 +814,7 @@ def calculate_forces_all():
 
 
 
-# CUDA kernel
+# CUDA code:
 kernel_code = '''
 #include <math_functions.h>
 
