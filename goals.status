@@ -1,0 +1,9 @@
+
+This file is to organize some of the main goals of the code and the current status related to these goals.
+
+1) Simulate some electrons - have something
+2) Make video so we can see waves propagating - have something
+3) Simulate a current in wire.  We can move electrons from right side to the left.
+4) Simulate electrons bound to atoms with sping force
+5) Check waves including electrons bound to atoms
+6) Simulate 2 wires with 2 currents and measure forces between them when same and opposite directions
