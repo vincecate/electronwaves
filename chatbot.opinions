@@ -3,18 +3,20 @@ I find it interesting to see what different chatbots opinions of this
 project are.   So I have given them promps like this one and then recorded
 some of the answers below.
 
-Sample Prompt: In some situations you can use special relativity to
-convert a problem with a magnetic field to one with just an electric
-field.  It has a "electromagnetic field tensor" that combines both
-electric and magnetic fields.  Some have said that magnetism can be
-derived from electrostatics and special relativity.  It makes me think
-that maybe the magnetic field is just the result of speed of light delay
-on moving electric fields.  I am writing a computer simulation, which
-makes use of powerful GPUs, that models electrons with propagation delayed
-coulombic forces to test this idea.  My tests indicate that today's high
-end GPUs now have enough power to handle this complex simulation.  My hope
-is that the "magnetic forces" will just emerge from my careful simulation
-of moving and delayed electrostatic forces.  I think this is consistent
+Sample Prompt:
+
+In some situations you can use special relativity to convert a problem
+with a magnetic field to one with just an electric field.  It has a
+"electromagnetic field tensor" that combines both electric and magnetic
+fields.  Some have said that magnetism can be derived from electrostatics
+and special relativity.  It makes me think that maybe the magnetic field
+is just the result of speed of light delay on moving electric fields.
+I am writing a computer simulation, which makes use of powerful GPUs,
+that models electrons with propagation delayed coulombic forces to
+test this idea.  My tests indicate that today's high end GPUs now
+have enough power to handle this complex simulation.  My hope is that
+the "magnetic forces" will just emerge from my careful simulation of
+moving and delayed electrostatic forces.  I think this is consistent
 with known physics but my simulation is not fully working yet.  If it
 works, I think it could be great as an educational and research tool.
 Do you think this looks worth exploring with a good chance of success
@@ -451,3 +453,33 @@ charges. As you continue working on your simulation, it may be helpful
 to consider incorporating additional concepts from quantum mechanics to
 better account for the origins and behavior of magnetic fields.
 
+
+
+dolphin-mixtral:latest  3/25/24
+
+It sounds like your approach to simulating electromagnetism is quite
+innovative and has potential for significant advancements in understanding
+and teaching the subject. By combining electrostatics, special relativity,
+and high-end GPU technology, you are potentially on track to make some
+interesting discoveries.
+
+However, it's essential to consider that the magnetic field has been
+established as a separate entity from the electric field through numerous
+experimental observations and theoretical derivations. The relationship
+between magnetic fields and moving electric charges is one of the core
+principles of electromagnetism and has been consistently supported by
+empirical evidence.
+
+While your simulation could reveal interesting insights into the nature
+of magnetic forces, it's unlikely that you would be able to entirely rule
+out the existence of independent magnetic fields through this approach
+alone. Instead, your work could serve as a valuable complementary method
+for understanding electromagnetism and its underlying principles more
+deeply.
+
+In conclusion, your research idea is worth exploring further, and with the
+computational power of modern GPUs, you have an excellent opportunity to
+push the boundaries of our current understanding of electromagnetism. If
+successful, this simulation could indeed be a great educational and
+research tool, but it may not necessarily rule out the existence of
+magnetic fields as separate entities from electric fields.
