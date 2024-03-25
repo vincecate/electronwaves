@@ -5,6 +5,11 @@ This file is to organize some of the main goals of the code and the current stat
 2) Make video so we can see waves propagating -  Done
 3) Use historical positions of electrons to simulate speed of light delay - Done
 4) Simulate a current in wire.  We can move electrons from right side to the left. - Done
-5) Simulate electrons bound to atoms with spring force in addition to forces from other electrons
-6) Check wave motion once including electrons bound to atoms
-7) Simulate 2 wires with 2 currents and measure forces between them when same and opposite directions
+
+
+5) Simulate 2 wires with 2 currents and measure forces between them when same and opposite directions - compare to magnetic 
+       Can just have half the electrons using 1 "wire boundry" array and half using a different one.
+       Might add up bounce momentum to get total push on each wire - almost like balloon
+6) Simulate electrons bound to atoms with spring force in addition to forces from other electrons
+7) Check wave motion once including electrons bound to atoms
+8) Simulate a single wire in a U shape?  Like tiny Veritasium loop would be cool
