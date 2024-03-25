@@ -1,0 +1,6 @@
+#!/bin/bash
+
+#  When we add chatbot results they are not formatted so we do that here
+
+fmt -w 75 chatbot.opinions  > tmp.tmp
+mv tmp.tmp chatbot.opinions
