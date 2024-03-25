@@ -448,9 +448,6 @@ def initialize_electrons():
     y_positions = cp.random.uniform(0, gridy * initial_spacing, num_electrons)
     z_positions = cp.random.uniform(0, gridz * initial_spacing, num_electrons)
 
-    # Shuffle the x_positions to mix pulse and rest electrons, maintaining overall distribution
-    # cp.random.shuffle(x_positions)    # XXX seems to defeat the idea of the pulse
-
     # Stack x, y, z positions to form the electron_positions array
     electron_positions = cp.stack((x_positions[:num_electrons], y_positions, z_positions), axis=-1)
 
@@ -484,6 +481,9 @@ def initialize_past():
 #   so we will put together something and hand it off 
 #   with 12 cores we can do well
 # For now nucleus_positions is a constant - doing electrons in wire first
+# XXXX can use cupy.bin to get electrons within a range to plot
+# XXXX might still use distance from atom for bound electrons so don't want to get rid of this
+# XXXX part just yet
 def visualize_atoms(epositions, evelocities, step, t):
     global gridx, gridy, gridz, bounds, nucleus_positions, electron_speed, electron_velocities  # all these global are really constants
     global visualize_start, visualize_stop, visualize_plane_step
