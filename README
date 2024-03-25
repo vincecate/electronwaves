@@ -8,11 +8,11 @@ using magnetism, then "electon waves", the name of this project, seems like a go
 I have collected some chatbot opinions of this idea in the file chatbot.opinions.  
 
 Only when calculating forces between electrons do we have an N-squared problem.  This
-the most performance critical part.  This part is done in CUDA with the code in kernel.cu.   
+is the most performance critical part.  This part is done in CUDA with the code in kernel.cu.   
 
-Much of the rest of the computaion is done using CuPy vectors in Python.  
+Much of the rest of the computaion is done using CuPy vectors in Python in electronwaves.py.  
+Some output/visualization code is done with Python/Numpy vectors so they can run 
+on CPU cores in the background.
 
-Some output/visualization code is done
-with Numpy vectors so they can run on CPU cores in the background.
-
+Several bash scripts to make video from output images etc.
 
