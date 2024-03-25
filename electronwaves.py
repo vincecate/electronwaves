@@ -10,7 +10,7 @@
 #
 #  We currently 3/9/24 only simulate free electrons but the "displacement current" from bound electrons might be important
 #  We can simulate electrons bound to atoms as electrons on a spring to a point.  So this would not be hard.
-#  Can have an array of flags telling us which electrons are bound
+#  Can have an array of flags telling us which electrons are bound - electron_is_bound
 #  And another array of atom_positions showing where the spring is connected to
 #  This was maxwell's model and so almost certain to work for propagating waves
 #  
@@ -142,6 +142,8 @@ driving_end_perc = sim_settings.get('driving_end_perc', 5) # 5 percent of both e
 latice_collisions_on = sim_settings.get('latice_collisions_on', True) # 
 mean_free_path = sim_settings.get('mean_free_path', 4e-8) #  Seems for drif velocity 4e-8 works but for Fermi velocity may not be right
 amps_method = sim_settings.get('amps_method', 1) #  Used in calculate_plots:  1=use electron_past_positions  2=use drift velocity and counts
+bound_electrons_on = sim_settings.get('bound_electrons_on', False) #  are some electrons bound to atoms
+bound_electrons_extra = sim_settings.get('bound_electrons_extra', 0.1) #  If some bound, what fraction is extra behound gridx*gridy*gridz for bound?
 
 effective_electron_mass = electron_mass   #  default is the same
 # Initial electron speed 2,178,278 m/s
@@ -206,8 +208,8 @@ electron_is_active = cp.zeros(num_electrons, dtype=bool)   # To take electrons o
 electron_positions = cp.zeros((num_electrons, 3))
 electron_velocities = cp.zeros((num_electrons, 3))
 forces = cp.zeros((num_electrons, 3))
-#electron_is_bound = cp.zeros(num_electrons, dtype=bool)   # if True then electron is bound to an atom, if flase then free
-#electron_atom_center = cp.zeros((num_electrons, 3))       # atom position that spring for bound electron is attached to
+electron_is_bound = cp.zeros(num_electrons, dtype=bool)   # if True then electron is bound to an atom, if flase then free
+electron_atom_center = cp.zeros((num_electrons, 3))       # atom position that spring for bound electron is attached to
 
 electron_past_positions = cp.zeros((num_electrons, past_positions_count, 3))   # keeping past positions with current at 0, previos 1, etc
 electron_past_velocities = cp.zeros((num_electrons, past_positions_count, 3))   # keeping past positions with current at 0, previos 1, etc
