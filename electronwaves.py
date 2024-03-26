@@ -144,7 +144,11 @@ mean_free_path = sim_settings.get('mean_free_path', 4e-8) #  Seems for drif velo
 amps_method = sim_settings.get('amps_method', 1) #  Used in calculate_plots:  1=use electron_past_positions  2=use drift velocity and counts
 bound_electrons_on = sim_settings.get('bound_electrons_on', False) #  are some electrons bound to atoms
 bound_electrons_extra = sim_settings.get('bound_electrons_extra', 0.1) #  If some bound, what fraction is extra behound gridx*gridy*gridz for bound?
-
+number_of_wires = sim_settings.get('number_of_wires', 1) #  1 or 2 wires - both gridx long so half electrons in each if 2 wires
+two_wires_gap = sim_settings.get('two_wires_gap', 20)  #  In intial_spacing units
+two_wires_opposite_current = sim_settings.get('two_wires_opposite_current', False)  #  Current going opposite directions in 2 wires if True
+if (number_of_wires == 2):
+    two_wires_on = True
 effective_electron_mass = electron_mass   #  default is the same
 # Initial electron speed 2,178,278 m/s
 # electron_speed= 2178278  
@@ -160,9 +164,6 @@ initial_spacing = copper_spacing*47  # 47^3 is about 100,000 and 1 free electron
 initial_radius = 5.29e-11 #  initial electron radius for hydrogen atom - got at least two times
 pulse_sinwave = False  # True if pulse should be sin wave
 
-
-# bounds format is  ((minx,  maxx) , (miny, maxy), (minz, maxz))
-bounds = ((0, (gridx-1)*initial_spacing), (0, (gridy-1)*initial_spacing), (0, (gridz-1)*initial_spacing))
 
 # Time stepping
 visualize_start= int(pulse_width/3) # have initial pulse electrons we don't really want to see 
@@ -180,6 +181,21 @@ dt = speedup*proprange*initial_spacing/c/num_steps  # would like total simulatio
 
 # Make string of some settings to put on output graph 
 sim_settings = f"simnum {simnum} gridx {gridx} gridy {gridy} gridz {gridz} speedup {speedup} lorentz {use_lorentz} ee-col {ee_collisions_on} amps {amps_method} \n latice {latice_collisions_on} mfp {mean_free_path:.4e} driving_c {driving_current:.4e} Spacing: {initial_spacing:.4e} PWidth {pulse_width} PDensity {pulse_density} PVeloc {pulse_velocity} Steps: {num_steps} dt: {dt:.4e} iv:{initialize_velocities} st:{search_type}"
+
+
+# Function to calculate bounds
+def calculate_bounds(extra_y=0):
+    # Adjust the start and end points for y dimension based on extra_y
+    y_start = extra_y * initial_spacing
+    y_end = (extra_y + gridy - 1) * initial_spacing
+    return ((0, (gridx - 1) * initial_spacing), (y_start, y_end), (0, (gridz - 1) * initial_spacing))
+
+# We have bounds positions for wires 0 and 1 
+# bounds format is  ((minx,  maxx) , (miny, maxy), (minz, maxz))
+wire_bounds = [
+    calculate_bounds(),  # bounds for the first wire, equivalent to extra_y=0
+    calculate_bounds(two_wires_gap + gridy)                  # offset for second wire is width (gridy) and gap to next wire
+]
 
 def GPUMem():
     # Get total and free memory in bytes
@@ -485,7 +501,7 @@ def initialize_past():
 # XXXX might still use distance from atom for bound electrons so don't want to get rid of this
 # XXXX part just yet
 def visualize_atoms(epositions, evelocities, step, t):
-    global gridx, gridy, gridz, bounds, nucleus_positions, electron_speed, electron_velocities  # all these global are really constants
+    global gridx, gridy, gridz, wire_bounds, nucleus_positions, electron_speed, electron_velocities  # all these global are really constants
     global visualize_start, visualize_stop, visualize_plane_step
 
     print("visualize_atoms not working for 2D structures yet")
@@ -501,6 +517,7 @@ def visualize_atoms(epositions, evelocities, step, t):
     minx = visualize_start*initial_spacing
     maxx = visualize_stop*initial_spacing
     ax.set_xlim(minx,maxx)   # set display bounds which are different than simulation bounds
+    bound=wire_bounds[0]     # for now only displaying the first wire
     ax.set_ylim(bounds[1])
     ax.set_zlim(bounds[2])
 
@@ -925,7 +942,7 @@ def print_forces_sum():
 
 
 def update_pv(dt):
-    global electron_velocities, electron_positions, bounds, forces, effective_electron_mass, electron_past_positions, max_velocity
+    global electron_velocities, electron_positions, wire_bounds, forces, effective_electron_mass, electron_past_positions, max_velocity
 
     # Calculate acceleration based on F=ma
     acceleration = forces / effective_electron_mass
@@ -943,17 +960,26 @@ def update_pv(dt):
     # Update positions using vectors
     electron_positions += electron_velocities * dt
 
-    # Keep positions and velocities within bounds
-    for dim in range(3):  # Iterate over x, y, z dimensions
-        # Check and apply upper boundary conditions
-        over_max = electron_positions[:, dim] > bounds[dim][1]   # 1 holds max
-        electron_positions[over_max, dim] = bounds[dim][1]  # Set to max bound
-        electron_velocities[over_max, dim] *= reverse_factor  # Reverse velocity
+    # Calculate the number of electrons per wire (assuming it evenly divides by the number of wires)
+    electrons_per_wire = num_electrons // number_of_wires
 
-        # Check and apply lower boundary conditions
-        below_min = electron_positions[:, dim] < bounds[dim][0]  # 0 holds min
-        electron_positions[below_min, dim] = bounds[dim][0]  # Set to min bound
-        electron_velocities[below_min, dim] *= reverse_factor  # Reverse velocity
+    for wirenum in range(number_of_wires):
+        bounds = wire_bounds[wirenum]
+
+        # Determine the slice of electrons for the current wire
+        start_idx = wirenum * electrons_per_wire
+        end_idx = (wirenum + 1) * electrons_per_wire if wirenum < number_of_wires - 1 else num_electrons
+
+        for dim in range(3):  # Iterate over x, y, z dimensions
+            # Check and apply upper boundary conditions
+            over_max = electron_positions[start_idx:end_idx, dim] > bounds[dim][1]    # bound 1 holds max
+            electron_positions[start_idx:end_idx][over_max, dim] = bounds[dim][1]     # if over max set to max
+            electron_velocities[start_idx:end_idx][over_max, dim] *= reverse_factor   #     and reverse the velocity
+
+            # Check and apply lower boundary conditions
+            below_min = electron_positions[start_idx:end_idx, dim] < bounds[dim][0]   # bounds 0 hold min
+            electron_positions[start_idx:end_idx][below_min, dim] = bounds[dim][0]    # if below min set to min
+            electron_velocities[start_idx:end_idx][below_min, dim] *= reverse_factor  #    and reverse velocity
 
     
     # Step 1: Shift all past positions to the right by one position
