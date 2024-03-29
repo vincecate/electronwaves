@@ -867,7 +867,9 @@ def calculate_forces_cuda():
         end_gpu.record()
         end_gpu.synchronize()
         t_gpu = cp.cuda.get_elapsed_time(start_gpu, end_gpu)
-        print(f"Calculate_forces duration {t_gpu/1000} seconds")
+        seconds=t_gpu/1000
+        EWPerfGPUBPS=num_electrons*num_electrons/seconds/1000000000
+        print(f"Calculate_forces duration {seconds} seconds EWPerfGPUBPS {EWPerfGPUBPS}")
 
     except cp.cuda.CUDARuntimeError as e:
         print(f"CUDA Error: {e}")
@@ -1102,6 +1104,9 @@ def main():
         cp.cuda.Stream.null.synchronize()         # free memory on the GPU
         elapsed_time = time.time() - start_time           # Calculate elapsed time
         average_time_per_step = elapsed_time / (step + 1) # Calculate the average time per step so far
+        EWPerfTotalBPS = num_electrons*num_electrons/average_time_per_step/1000000000
+        print(f"EWPerfTotalBPS is {EWPerfTotalBPS}")
+
         estimated_time_left = average_time_per_step * (num_steps - (step + 1)) # Estimate the time left by multiplying the average time per step by the number of steps left
         estimated_completion_time = datetime.now() + timedelta(seconds=estimated_time_left) # Calculate the estimated completion time
         print(f"Step {step + 1}/{num_steps}. Estimated completion time: {estimated_completion_time.strftime('%Y-%m-%d %H:%M:%S')}")
