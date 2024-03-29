@@ -1049,4 +1049,43 @@ between electric and magnetic fields, but it is unlikely to completely
 replace the need for a separate theory of magnetism.
 
 
+gpt-4-0613  3/29/24
+
+Your idea is very intriguing and seems to be grounded in solid physics
+theory. The principle that magnetism can be derived from electrostatics
+and special relativity is indeed a popular interpretation in the physics
+community. This idea is often stated as "magnetism is relativity",
+highlighting that magnetic forces are essentially just electric forces
+viewed from a different frame of reference, i.e., one that is moving
+relative to the charges.
+
+In terms of the feasibility of your project, modern GPUs certainly
+have the computational power to handle complex simulations, and
+propagation-delayed Coulombic forces are a valid aspect to consider in
+a simulation of this kind.
+
+However, there are a few challenges to consider. One is the precision
+required for such a simulation. Electromagnetic interactions happen
+incredibly quickly (on the order of the speed of light), and so accurately
+simulating these interactions might require a very high temporal
+resolution, pushing the limits of what is currently possible with GPUs.
+
+Another challenge is the complexity of the interactions. Electromagnetic
+interactions are not just pair-wise interactions like gravitational ones;
+the presence of a third charge can significantly affect the interaction
+between two other charges. This means that the computational complexity
+of the problem might scale poorly with the number of particles.
+
+Finally, it's worth noting that while this interpretation of magnetism is
+popular and intuitive, it is not the only one. There are other, equally
+valid interpretations that involve quantum mechanics, for example. It's
+possible that a purely classical simulation might not fully capture all
+the nuances of electromagnetic interactions.
+
+In conclusion, while there are certainly challenges to consider, your
+idea is intriguing and could potentially yield interesting results. Even
+if it doesn't work out exactly as you hope, the process of building and
+testing the simulation could provide valuable insights and lead to new
+research directions. Good luck with your project!
+
 
