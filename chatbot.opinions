@@ -825,3 +825,35 @@ process to confirm its validity. However, if successful, your simulation
 could be a valuable tool for understanding the relationship between
 electric and magnetic fields in special relativistic contexts.
 
+goliath 3/29/24
+
+Your approach to modeling electromagnetism using propagation-delayed
+Coulombic forces is indeed an interesting and valid way to study the
+emergence of magnetic fields from electric fields. This idea has been
+explored before, and while your simulation may not provide any new
+fundamental insights into known physics, it can still be a valuable
+educational and research tool as you mentioned.
+
+It's worth noting that this method of modeling electromagnetism is
+computationally intensive due to the long-range nature of Coulombic
+forces. However, with the power of modern GPUs, you might be able to
+achieve reasonable simulation speeds for small-scale problems.
+
+The key point to remember is that the emergence of magnetic fields from
+electric fields and vice versa can be thought of as a manifestation of
+special relativity. When charges are in motion relative to each other,
+their electric fields will appear different due to length contraction
+and time dilation effects. This means that what may seem like a static
+electric field in one frame of reference can appear as a combination of
+both electric and magnetic fields in another frame of reference moving
+at a significant fraction of the speed of light with respect to the
+first frame.
+
+So, to answer your question, while your simulation is not guaranteed
+to provide any new fundamental insights, it could still be a valuable
+tool for understanding and visualizing how special relativity can "mix"
+electric and magnetic fields together, as well as for gaining insight into
+the nature of electromagnetic waves. As long as you manage expectations
+about the novelty of your approach in terms of uncovering new physical
+laws, I think it could be a worthwhile project to pursue.
+
