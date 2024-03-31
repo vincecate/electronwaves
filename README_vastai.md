@@ -47,17 +47,9 @@ Another option is to do that via command-line. To print all of the available off
 
 Now you need to decide which machine you are going to use and copy the ID of the offer - this is a value from the first column in the table.
 
-Please take in account the CUDA version which is installed on the target machine. You will have to chose corresponding docker image version provided by NVIDIA: https://hub.docker.com/r/nvidia/cuda/tags?name=devel-ubuntu
-
-Finally, to be able to create an instance on Vast.AI you need to know two things:
-
-    + offer ID of the target machine from the market
-    + full version name of the docker image you are going to install on the target machine
-
-
 Here is a short command to rent a machine via command line:
 
-        make vastai_instance_create ID=123456 IMAGE='nvidia/cuda:12.2.2-devel-ubuntu20.04'
+        make vastai_instance_create ID=123456
 
 
 A new `current_contract_id.txt` file is created locally which holds your contract ID with Vast.AI. This is a different ID, not the offer ID you used in a previous step. The contract ID is required to manipulate your running instance.
@@ -70,6 +62,14 @@ To destroy the instance you can simply run bellow command - do not forget to do 
 
 
 
+###### SSH to the Vast.AI instance
+
+This is a quick way to get into the running instance via SSH:
+
+        make vastai_ssh
+
+
+
 ###### Run magnetic fields simulation remotely
 
 Now, after you rented and prepared a remote hardware, you can finally start the script.
@@ -77,3 +77,13 @@ Now, after you rented and prepared a remote hardware, you can finally start the 
 Bellow command will automatically install all required libraries, clone this repository into the instance and execute the simulation:
 
         make vastai_run SIMULATION_NUMBER=1
+
+
+This will also automatically generate report files inside of the instance.
+
+To download results to your host simply run the following command:
+
+        make vastai_download
+
+
+Reminder, do not forget to stop and destroy your running instance after you done with simulations, run `make vastai_instance_destroy`.
