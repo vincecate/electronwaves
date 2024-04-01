@@ -47,7 +47,7 @@ Another option is to do that via command-line. To print all of the available off
 
 Now you need to decide which machine you are going to use and copy the ID of the offer - this is a value from the first column in the table.
 
-Here is a short command to rent a machine via command line:
+Here is a short command to rent a machine via command line - this will also automatically install all required libraries for you:
 
         make vastai_instance_create ID=123456
 
@@ -70,16 +70,24 @@ This is a quick way to get into the running instance via SSH:
 
 
 
+###### Deploy source code into the instance
+
+Following command will clone that repository into the running instance:
+
+        make vastai_getcode
+
+
+
 ###### Run magnetic fields simulation remotely
 
-Now, after you rented and prepared a remote hardware, you can finally start the script.
+Now, after you rented and prepared a remote instance, you can finally start the script.
 
-Bellow command will automatically install all required libraries, clone this repository into the instance and execute the simulation:
+Bellow command will , clone this repository into the instance and execute the simulation:
 
         make vastai_run SIMULATION_NUMBER=1
 
 
-This will also automatically generate report files inside of the instance.
+Above command will also automatically generate report files inside of the instance.
 
 To download results to your host simply run the following command:
 
