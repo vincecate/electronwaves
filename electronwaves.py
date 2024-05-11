@@ -47,7 +47,11 @@
 #  1- speed of light comes out right from plane wave and electrons charge and mass
 #  2- light of certain frequencies can drive electrons off as in experiments
 #  3- magnetic field from moving charges - if we can simulate moving charges curving in mag field using instant force beteen electrons
+#  3b - if magnetic field type forces could emerge from delayed electrostatic forces that would be cool as well.  
+#        chatbot.opinions has lots of chatbots that think this might work.
 #  4 - ampiers law that two wires next to each othe with current going the same way attract and opposite then repel
+#        delayed electrostatic forces could do this and so be a simple test of idea that magnetism is just delayed electrostatics
+#        To do this we need to simulate 2 wires with currents
 #
 # At room temperature a ratio of 1 electron in 100,000 copper atoms is really free.
 #   Same as saying only 0.001% or 10^-5 of the conduction electrons are free.
@@ -60,7 +64,8 @@
 #  In the wire display it may be good to show average movement of each dX in a graph.  Perhaps this will show
 #  a much faster wave than what is probably a and "electron density wave".   Feb 12, 2024
 #
-#  Should make switch to show wire offset/density/velocites   Feb 13, 2024
+# NEXT GOAL
+#   2 wires with current in each and a way to measure force between them
 
 
 import cupy as cp
