@@ -1,4 +1,6 @@
 #!/bin/bash
 
+echo "Should have done something like git commit -a -m 'more chatbots' already"
+
 git push origin main
 
